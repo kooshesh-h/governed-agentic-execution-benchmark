@@ -1,1 +1,12 @@
-<Solution />
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kooshi.Benchmark.DirectLlm.Api/Kooshi.Benchmark.DirectLlm.Api.csproj" />
+    <Project Path="src/Kooshi.Benchmark.ProcessBound.Api/Kooshi.Benchmark.ProcessBound.Api.csproj" />
+    <Project Path="src/Kooshi.Benchmark.Runner/Kooshi.Benchmark.Runner.csproj" />
+    <Project Path="src/Kooshi.Benchmark.Shared/Kooshi.Benchmark.Shared.csproj" />
+    <Project Path="src/Kooshi.Benchmark.WorkflowAgent.Api/Kooshi.Benchmark.WorkflowAgent.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kooshi.Benchmark.Tests/Kooshi.Benchmark.Tests.csproj" />
+  </Folder>
+</Solution>

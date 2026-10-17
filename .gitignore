@@ -361,3 +361,20 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Local benchmark state
+*.db
+*.db-shm
+*.db-wal
+.dotnet/
+.templateengine/
+
+# Local configuration and experiment artifacts
+.env
+.env.*
+!.env.example
+results/
+*.sqlite
+*.sqlite3
+*.db-journal
+*.log
+*.tmp

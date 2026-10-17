@@ -1,0 +1,131 @@
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+
+namespace Kooshi.Benchmark.ProcessBound.Api;
+
+public sealed class ExecutionStore : Kooshi.Benchmark.Shared.IBookingCommitStore
+{
+    private readonly string _connectionString;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public ExecutionStore(IConfiguration configuration)
+    {
+        var path = configuration["ProcessBound:DatabasePath"] ?? "processbound.db";
+        var fullPath = Path.GetFullPath(path);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = fullPath }.ToString();
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, state TEXT NOT NULL); CREATE TABLE IF NOT EXISTS bookings (execution_id TEXT PRIMARY KEY, booking_id TEXT NOT NULL); CREATE TABLE IF NOT EXISTS idempotency_keys (key TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id));";
+        command.ExecuteNonQuery();
+    }
+
+    public async Task<ExecutionState?> GetAsync(Guid id, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT state FROM executions WHERE id = $id";
+            command.Parameters.AddWithValue("$id", id.ToString());
+            var json = (string?)await command.ExecuteScalarAsync(ct);
+            return json is null ? null : JsonSerializer.Deserialize<ExecutionState>(json, JsonOptions);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task SaveAsync(ExecutionState state, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO executions(id,state) VALUES($id,$state) ON CONFLICT(id) DO UPDATE SET state=$state";
+            command.Parameters.AddWithValue("$id", state.Id.ToString());
+            command.Parameters.AddWithValue("$state", JsonSerializer.Serialize(state, JsonOptions));
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<(string BookingId, bool Duplicate)> CommitBookingAsync(Guid executionId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "INSERT OR IGNORE INTO bookings(execution_id,booking_id) VALUES($id,$booking)";
+            command.Parameters.AddWithValue("$id", executionId.ToString());
+            command.Parameters.AddWithValue("$booking", Guid.NewGuid().ToString());
+            var affected = await command.ExecuteNonQueryAsync(ct);
+            command.CommandText = "SELECT booking_id FROM bookings WHERE execution_id=$id";
+            var bookingId = (string)(await command.ExecuteScalarAsync(ct))!;
+            return (bookingId, affected == 0);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<string?> FindBookingAsync(Guid executionId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT booking_id FROM bookings WHERE execution_id=$id";
+            command.Parameters.AddWithValue("$id", executionId.ToString());
+            return (string?)await command.ExecuteScalarAsync(ct);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<Guid?> FindIdempotentExecutionAsync(string key, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT execution_id FROM idempotency_keys WHERE key=$key";
+            command.Parameters.AddWithValue("$key", key);
+            var found = (string?)await command.ExecuteScalarAsync(ct);
+            return found is null ? null : Guid.Parse(found);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<Guid> BindIdempotencyKeyAsync(string key, Guid executionId, CancellationToken ct)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(ct);
+            await using var transaction = await connection.BeginTransactionAsync(ct);
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = "INSERT OR IGNORE INTO idempotency_keys(key,execution_id) VALUES($key,$id)";
+            command.Parameters.AddWithValue("$key", key);
+            command.Parameters.AddWithValue("$id", executionId.ToString());
+            await command.ExecuteNonQueryAsync(ct);
+            command.CommandText = "SELECT execution_id FROM idempotency_keys WHERE key=$key";
+            var winner = Guid.Parse((string)(await command.ExecuteScalarAsync(ct))!);
+            await transaction.CommitAsync(ct);
+            return winner;
+        }
+        finally { _gate.Release(); }
+    }
+}
+
+
+

@@ -1,0 +1,25 @@
+{
+  "id": "transient-retry",
+  "description": "First downstream attempt fails",
+  "initial": "customerName: Ada Lovelace, email: ada@example.org, product: Analytics, preferredDate: 2030-11-01, timeZone: UTC",
+  "followUps": [],
+  "action": "retry",
+  "fault": "transient",
+  "invariants": [
+    "No unintended business effect",
+    "Final state and persisted evidence agree"
+  ],
+  "timeoutSeconds": 90,
+  "expectedBusinessInputs": {
+    "customerName": "Ada Lovelace",
+    "email": "ada@example.org",
+    "product": "Analytics",
+    "preferredDate": "2030-11-01",
+    "timeZone": "UTC"
+  },
+  "completionCriteria": [
+    "Expected final status",
+    "Persisted business effect count",
+    "Expected booking field values"
+  ]
+}

@@ -1,0 +1,21 @@
+[
+  {
+    "id": "demo-booking",
+    "version": "1.0",
+    "description": "Create a synthetic product demonstration booking",
+    "fields": [
+      { "name": "customerName", "type": "string", "required": true },
+      { "name": "email", "type": "email", "required": true, "validation": "email" },
+      { "name": "product", "type": "string", "required": true },
+      { "name": "preferredDate", "type": "date", "required": true, "validation": "today-or-later" },
+      { "name": "timeZone", "type": "timezone", "required": true, "validation": "system-timezone" }
+    ],
+    "preconditions": ["valid-fields"],
+    "authorization": ["registered-process"],
+    "requiresConfirmation": true,
+    "allowedTools": ["create_demo_booking"],
+    "sideEffect": "synthetic-booking",
+    "retryLimit": 3,
+    "recovery": "reconcile-by-execution-id"
+  }
+]

@@ -1,0 +1,62 @@
+services:
+  direct:
+    build: { context: ., dockerfile: Dockerfile, target: direct }
+    ports: ["5101:8080"]
+    environment:
+      DirectLlm__Mode: simulated
+      DirectLlm__DatabasePath: /data/direct.db
+    volumes: ["direct-data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  workflow:
+    build: { context: ., dockerfile: Dockerfile, target: workflow }
+    ports: ["5102:8080"]
+    environment:
+      WorkflowAgent__Mode: simulated
+      WorkflowAgent__DatabasePath: /data/workflow.db
+    volumes: ["workflow-data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  process:
+    build: { context: ., dockerfile: Dockerfile, target: process }
+    ports: ["5103:8080"]
+    environment:
+      ProcessBound__Mode: simulated
+      ProcessBound__DatabasePath: /data/process.db
+    volumes: ["process-data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  benchmark:
+    profiles: ["benchmark"]
+    build: { context: ., dockerfile: Dockerfile, target: benchmark }
+    volumes: ["./results:/benchmark/results"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DirectLlm__Endpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}
+      WorkflowAgent__Endpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}
+      ProcessBound__Endpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}
+      DirectLlm__Model: ${LLM_MODEL:-gpt-4o-mini}
+      WorkflowAgent__Model: ${LLM_MODEL:-gpt-4o-mini}
+      ProcessBound__Model: ${LLM_MODEL:-gpt-4o-mini}
+      DirectLlm__Temperature: ${LLM_TEMPERATURE:-0}
+      WorkflowAgent__Temperature: ${LLM_TEMPERATURE:-0}
+      ProcessBound__Temperature: ${LLM_TEMPERATURE:-0}
+      DirectLlm__MaxOutputTokens: ${LLM_MAX_OUTPUT_TOKENS:-512}
+      WorkflowAgent__MaxOutputTokens: ${LLM_MAX_OUTPUT_TOKENS:-512}
+      ProcessBound__MaxOutputTokens: ${LLM_MAX_OUTPUT_TOKENS:-512}
+      DirectLlm__TimeoutSeconds: ${LLM_TIMEOUT_SECONDS:-30}
+      WorkflowAgent__TimeoutSeconds: ${LLM_TIMEOUT_SECONDS:-30}
+      ProcessBound__TimeoutSeconds: ${LLM_TIMEOUT_SECONDS:-30}
+volumes:
+  direct-data:
+  workflow-data:
+  process-data:

@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\scenarios\*.json" Link="scenarios\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Kooshi.Benchmark.Shared\Kooshi.Benchmark.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Kooshi.Benchmark.DirectLlm.Api\Kooshi.Benchmark.DirectLlm.Api.csproj" />
+    <ProjectReference Include="..\..\src\Kooshi.Benchmark.WorkflowAgent.Api\Kooshi.Benchmark.WorkflowAgent.Api.csproj" />
+    <ProjectReference Include="..\..\src\Kooshi.Benchmark.ProcessBound.Api\Kooshi.Benchmark.ProcessBound.Api.csproj" />
+    <ProjectReference Include="..\..\src\Kooshi.Benchmark.Runner\Kooshi.Benchmark.Runner.csproj" />
+  </ItemGroup>
+
+</Project>

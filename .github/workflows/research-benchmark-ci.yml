@@ -1,0 +1,134 @@
+name: Research benchmark CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      OPENAI_API_KEY: ''
+      LLM_ENDPOINT: http://127.0.0.1:1/ci-disabled
+      LLM_MODEL: ci-simulated-only
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore dependencies
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          dotnet restore Kooshi.ArchitectureBenchmark.slnx 2>&1 | tee ci-logs/restore.log
+      - name: Build solution
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          dotnet build Kooshi.ArchitectureBenchmark.slnx --no-restore -c Release 2>&1 | tee ci-logs/build.log
+      - name: Run xUnit suite
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          dotnet test Kooshi.ArchitectureBenchmark.slnx --no-build --no-restore -c Release --logger 'trx;LogFileName=tests.trx' --results-directory ci-logs 2>&1 | tee ci-logs/tests.log
+      - name: Build all Docker images
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          docker compose --profile benchmark build direct workflow process benchmark 2>&1 | tee ci-logs/docker-build.log
+      - name: Validate Compose
+        run: |
+          set -o pipefail
+          docker compose --profile benchmark config --quiet 2>&1 | tee ci-logs/compose-config.log
+      - name: Start manual APIs
+        timeout-minutes: 3
+        run: docker compose up -d --no-build direct workflow process
+      - name: Verify health and simulated mode
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          for port in 5101 5102 5103; do
+            healthy=0
+            for attempt in {1..30}; do
+              if curl --fail --silent "http://127.0.0.1:${port}/health" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["status"] == "healthy" and x["mode"] == "simulated"'; then
+                healthy=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$healthy" -ne 1 ]; then
+              echo "API on port $port did not become healthy in simulated mode" >&2
+              docker compose logs --no-color direct workflow process >&2
+              exit 1
+            fi
+          done
+          docker compose ps
+      - name: Run isolated simulated benchmark
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          mkdir -p results ci-logs
+          docker compose --profile benchmark run --rm --no-deps benchmark --mode simulated --repetitions 1 --seed 42 --restart --output results 2>&1 | tee ci-logs/benchmark.log
+      - name: Verify benchmark evidence
+        run: |
+          python3 - <<'PY'
+          import csv, json
+          from pathlib import Path
+          folders = list(Path('results').glob('experiment-*'))
+          assert len(folders) == 1, f'Expected one experiment directory, found {folders}'
+          folder = folders[0]
+          metadata = json.loads((folder / 'metadata.json').read_text())
+          runs = json.loads((folder / 'runs.json').read_text())
+          assert metadata['executionMode'] == 'simulated' and metadata['complete'] is True
+          assert metadata['plannedRuns'] == 21 and len(runs) == 21
+          assert metadata['options']['mode'] == 'simulated' and metadata['options']['seed'] == 42
+          assert metadata['options']['restart'] is True
+          assert all(r['executionMode'] == 'simulated' for r in runs)
+          assert len({r['runId'] for r in runs}) == 21
+          assert len({(r['scenarioId'], r['architecture']) for r in runs}) == 21
+          assert all(r['scenarioSuccess'] is True for r in runs), [(r['scenarioId'], r['architecture'], r['diagnostic']) for r in runs if r['scenarioSuccess'] is not True]
+          assert all((folder / (r['runId'] + '.db')).is_file() for r in runs)
+          assert len(list(folder.glob('*.db'))) == 21
+          with (folder / 'runs.csv').open(newline='') as f:
+              assert len(list(csv.DictReader(f))) == 21
+          for name in ('summary.json', 'summary.csv', 'failures.json'):
+              assert (folder / name).is_file(), name
+          assert not json.loads((folder / 'failures.json').read_text())
+          for path in folder.glob('*.json'):
+              contents = path.read_text()
+              assert 'OPENAI_API_KEY' not in contents
+              assert 'sk-' not in contents
+          print(f'Verified 21 simulated runs, isolated SQLite databases, restart recovery, and JSON/CSV exports in {folder}')
+          PY
+      - name: Collect Docker diagnostics
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          docker compose ps --all > ci-logs/compose-ps.txt 2>&1 || true
+          docker compose logs --no-color direct workflow process > ci-logs/api-containers.log 2>&1 || true
+      - name: Upload benchmark results and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-benchmark-ci-${{ github.run_id }}
+          path: |
+            results/
+            ci-logs/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Clean up Docker resources
+        if: always()
+        run: docker compose --profile benchmark down --volumes --remove-orphans || true

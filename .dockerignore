@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+.git/
+.vs/
+.dotnet/
+.templateengine/
+results/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+*.log
+.env
+.env.*
+!.env.example
+**/TestResults/

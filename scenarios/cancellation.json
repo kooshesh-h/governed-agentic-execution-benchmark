@@ -1,0 +1,25 @@
+{
+  "id": "cancellation",
+  "description": "Cancel before confirmation",
+  "initial": "customerName: Ada Lovelace, email: ada@example.org, product: Analytics, preferredDate: 2030-11-01, timeZone: UTC",
+  "followUps": [],
+  "action": "cancel",
+  "fault": "success",
+  "invariants": [
+    "No unintended business effect",
+    "Final state and persisted evidence agree"
+  ],
+  "timeoutSeconds": 90,
+  "expectedBusinessInputs": {
+    "customerName": "Ada Lovelace",
+    "email": "ada@example.org",
+    "product": "Analytics",
+    "preferredDate": "2030-11-01",
+    "timeZone": "UTC"
+  },
+  "completionCriteria": [
+    "Expected final status",
+    "Persisted business effect count",
+    "Expected booking field values"
+  ]
+}
