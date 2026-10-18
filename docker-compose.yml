@@ -37,7 +37,14 @@ services:
       retries: 5
   benchmark:
     profiles: ["benchmark"]
-    build: { context: ., dockerfile: Dockerfile, target: benchmark }
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: benchmark
+      args:
+        KOOSHI_BUILD_REVISION: ${KOOSHI_BUILD_REVISION:-}
+        KOOSHI_BUILD_BRANCH: ${KOOSHI_BUILD_BRANCH:-}
+        KOOSHI_BUILD_DIRTY: ${KOOSHI_BUILD_DIRTY:-}
     volumes: ["./results:/benchmark/results"]
     environment:
       DirectLlm__Endpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}

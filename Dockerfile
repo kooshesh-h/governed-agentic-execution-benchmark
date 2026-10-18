@@ -26,12 +26,14 @@ ENTRYPOINT ["dotnet", "Kooshi.Benchmark.ProcessBound.Api.dll"]
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS benchmark
 WORKDIR /benchmark
+ARG KOOSHI_BUILD_REVISION
+ARG KOOSHI_BUILD_BRANCH
+ARG KOOSHI_BUILD_DIRTY
+ENV KOOSHI_BUILD_REVISION=${KOOSHI_BUILD_REVISION} KOOSHI_BUILD_BRANCH=${KOOSHI_BUILD_BRANCH} KOOSHI_BUILD_DIRTY=${KOOSHI_BUILD_DIRTY}
 COPY Kooshi.ArchitectureBenchmark.slnx .
 COPY scenarios/ scenarios/
 COPY pilot/ pilot/
-COPY src/Kooshi.Benchmark.DirectLlm.Api/Llm.cs src/Kooshi.Benchmark.DirectLlm.Api/Llm.cs
-COPY src/Kooshi.Benchmark.WorkflowAgent.Api/Llm.cs src/Kooshi.Benchmark.WorkflowAgent.Api/Llm.cs
-COPY src/Kooshi.Benchmark.ProcessBound.Api/Llm.cs src/Kooshi.Benchmark.ProcessBound.Api/Llm.cs
+COPY src/ src/
 COPY --from=build /publish/runner/ runner/
 COPY --from=build /publish/Kooshi.Benchmark.DirectLlm.Api/ published/Kooshi.Benchmark.DirectLlm.Api/
 COPY --from=build /publish/Kooshi.Benchmark.WorkflowAgent.Api/ published/Kooshi.Benchmark.WorkflowAgent.Api/

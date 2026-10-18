@@ -10,6 +10,35 @@ namespace Kooshi.Benchmark.Tests;
 
 public class RunnerTests
 {
+    [Fact]
+    public void ProvenanceRejectsMissingOrInvalidRevision()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "provenance-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var missing = Provenance.Capture(root, "not-a-sha", "main", "false");
+            Assert.Null(missing.Commit);
+            Assert.Equal("unavailable", missing.Source);
+            var supplied = Provenance.Capture(root, new string('a', 40), "main", "true");
+            Assert.Equal(new string('a', 40), supplied.Commit);
+            Assert.Equal("main", supplied.Branch);
+            Assert.True(supplied.Dirty);
+            Assert.Equal("build", supplied.Source);
+            Assert.Null(Provenance.Capture(root, new string('a', 40), "main", "unknown").Commit);
+        }
+        finally { Directory.Delete(root); }
+    }
+
+    [Fact]
+    public void ConfigurationHashChangesWithConfiguration()
+    {
+        var first = Provenance.ConfigurationHash(new { seed = 42 }, null, new { model = "m" }, new[] { "DirectLlm" });
+        var same = Provenance.ConfigurationHash(new { seed = 42 }, null, new { model = "m" }, new[] { "DirectLlm" });
+        var changed = Provenance.ConfigurationHash(new { seed = 43 }, null, new { model = "m" }, new[] { "DirectLlm" });
+        Assert.Equal(first, same);
+        Assert.NotEqual(first, changed);
+    }
     private static Scenario Sample() => new("successful-booking", "test", "valid", [], "confirm", "success", ["one effect"], 30);
 
     [Fact]

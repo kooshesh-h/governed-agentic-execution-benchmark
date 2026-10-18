@@ -46,6 +46,20 @@ public static class Benchmark
         });
     public static string Setting(string architecture, string name, string fallback) => Configured(architecture, name) ?? fallback;
     public static string Sha256File(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+    public static string SourceTreeHash(string root)
+    {
+        var files = Directory.GetFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Split(Path.DirectorySeparatorChar).Any(part => part is "obj" or "bin"))
+            .OrderBy(path => Path.GetRelativePath(root, path).Replace('\\', '/'), StringComparer.Ordinal);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var file in files)
+        {
+            var name = Path.GetRelativePath(root, file).Replace('\\', '/');
+            hash.AppendData(Encoding.UTF8.GetBytes(name + "\n"));
+            hash.AppendData(File.ReadAllBytes(file));
+        }
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
     public static Dictionary<string, string> PromptSourceHashes(string root)
     {
         return new[] { "DirectLlm", "WorkflowAgent", "ProcessBound" }.ToDictionary(architecture => architecture, architecture =>
@@ -542,13 +556,16 @@ public static class Benchmark
                     : Path.Combine(published, projectName, projectName + ".dll");
                 return File.Exists(binary) ? Sha256File(binary) : null;
             });
+            var provenance = Provenance.Capture(root.FullName);
+            var order = plan.Select((x, i) => new { index = i, x.Architecture, scenarioId = x.Scenario.Id, x.Repetition }).ToArray();
             var metadata = new { experimentId = experiment, options, plannedRuns = plan.Count, executionMode = options.Mode == "real" ? "real_llm" : "simulated",
                 startedAt = DateTimeOffset.UtcNow, complete = false,
-                apiSettings, apiBinaryHashes, sourceRevision = Environment.GetEnvironmentVariable("KOOSHI_SOURCE_REVISION") ?? Environment.GetEnvironmentVariable("GITHUB_SHA"),
+                apiSettings, apiBinaryHashes, sourceRevision = provenance.Commit, sourceProvenance = provenance,
+                sourceTreeSha256 = SourceTreeHash(root.FullName), configurationSha256 = Provenance.ConfigurationHash(options, pilot, apiSettings, order),
                 pilotProtocol = pilot, pilotProtocolSha256 = pilotHash, variantSha256 = variantHash,
                 scenarioSha256 = Directory.GetFiles(Path.Combine(root.FullName, "scenarios"), "*.json").OrderBy(x => x).ToDictionary(x => Path.GetFileName(x), Sha256File),
                 promptSha256 = PromptSourceHashes(root.FullName), scenarioDefinitions = scenarios,
-                order = plan.Select((x, i) => new { index = i, x.Architecture, scenarioId = x.Scenario.Id, x.Repetition }).ToArray() };
+                order };
             Export(directory, metadata, runs);
             using var interruption = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; interruption.Cancel(); };
@@ -566,6 +583,7 @@ public static class Benchmark
             }
             Export(directory, new { metadata.experimentId, metadata.options, metadata.plannedRuns, metadata.executionMode,
                 metadata.startedAt, complete = runs.Count == plan.Count, metadata.apiSettings, metadata.apiBinaryHashes, metadata.sourceRevision,
+                metadata.sourceProvenance, metadata.sourceTreeSha256, metadata.configurationSha256,
                 metadata.pilotProtocol, metadata.pilotProtocolSha256, metadata.variantSha256, metadata.scenarioSha256, metadata.promptSha256,
                 metadata.scenarioDefinitions, metadata.order }, runs);
             Console.WriteLine(directory); return runs.Count == plan.Count && runs.All(x => x.ScenarioSuccess == true) ? 0 : 2;

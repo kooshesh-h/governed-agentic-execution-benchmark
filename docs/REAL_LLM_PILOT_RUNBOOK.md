@@ -1,6 +1,17 @@
 # Phase 8B real LLM feasibility pilot runbook
 
-Status: prepared; **no paid request has been made**. This is a 21-execution feasibility pilot, not a confirmatory comparison. A person must separately authorize one paid execution and then the full pilot. Keep its output under `results/pilot-8b/`, away from future confirmatory results.
+Status: one successful DirectLlm compatibility retest followed the first violated compatibility test; the 21-execution pilot has not run. This is a feasibility pilot, not a confirmatory comparison. Keep its output in a new experiment directory under `results/pilot-8b/` and preserve both compatibility experiments.
+
+The runner now queries Git for commit, branch, and dirty state. `sourceRevision` remains null and `sourceProvenance.warning` explains why if Git and complete build provenance are unavailable. Metadata also records the source tree hash, three prompt source hashes, binary hashes, scenario and variant hashes, and a configuration hash. For a Docker build without `.git`, set `KOOSHI_BUILD_REVISION`, `KOOSHI_BUILD_BRANCH`, and `KOOSHI_BUILD_DIRTY` from a verified host checkout before `docker compose build benchmark`:
+
+```powershell
+$env:KOOSHI_BUILD_REVISION = (git rev-parse --verify HEAD).Trim()
+$env:KOOSHI_BUILD_BRANCH = (git symbolic-ref --quiet --short HEAD 2>$null)
+$env:KOOSHI_BUILD_DIRTY = if (git status --porcelain --untracked-files=all) { 'true' } else { 'false' }
+docker compose --profile benchmark build benchmark
+```
+
+Build from that same checkout. A build supplied revision is labeled `source: build`, with a warning to verify its relationship to the build context; it is never silently substituted for Git evidence.
 
 ## Prerequisites and frozen protocol
 
