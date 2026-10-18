@@ -6,6 +6,17 @@ namespace Kooshi.Benchmark.Shared;
 
 public sealed record LlmTransportResult(string Message, string? ToolName, string? Arguments,
     int? InputTokens, int? OutputTokens);
+public sealed record NativeToolDiagnostic(int ToolCallCount, string[] ToolNames, string? FinishReason,
+    bool? ArgumentsValidJson, string[][] ArgumentFieldNames, int ProviderStatus,
+    int? InputTokens, int? OutputTokens, string? FailureClassification);
+
+public sealed class LlmResponseParseException(string message, int? inputTokens, int? outputTokens,
+    NativeToolDiagnostic? diagnostic = null) : JsonException(message)
+{
+    public int? InputTokens { get; } = inputTokens;
+    public int? OutputTokens { get; } = outputTokens;
+    public NativeToolDiagnostic? Diagnostic { get; } = diagnostic;
+}
 
 public static class OpenAiCompatibleTransport
 {
@@ -24,7 +35,7 @@ public static class OpenAiCompatibleTransport
         counter.Flush(true);
     }
     public static async Task<LlmTransportResult> SendAsync(HttpClient http, string endpoint, string apiKey,
-        object payload, CancellationToken ct)
+        object payload, CancellationToken ct, Action<NativeToolDiagnostic>? observe = null)
     {
         var limitText = Environment.GetEnvironmentVariable("KOOSHI_REMAINING_LLM_REQUESTS");
         if (limitText is not null)
@@ -45,26 +56,53 @@ public static class OpenAiCompatibleTransport
         using var response = await http.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
+        {
+            observe?.Invoke(new(0, [], null, null, [], (int)response.StatusCode, null, null, "provider_http_failure"));
             throw new HttpRequestException($"LLM request failed with HTTP {(int)response.StatusCode}");
+        }
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
-        var choice = root.GetProperty("choices")[0].GetProperty("message");
-        var content = choice.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String
-            ? contentElement.GetString() ?? "" : "";
-        string? tool = null, arguments = null;
-        if (choice.TryGetProperty("tool_calls", out var calls) && calls.ValueKind == JsonValueKind.Array && calls.GetArrayLength() > 0)
-        {
-            if (calls.GetArrayLength() != 1) throw new JsonException("Expected exactly one model tool call.");
-            var function = calls[0].GetProperty("function");
-            tool = function.GetProperty("name").GetString();
-            arguments = function.GetProperty("arguments").GetString();
-        }
         int? inputTokens = null, outputTokens = null;
         if (root.TryGetProperty("usage", out var usage))
         {
             if (usage.TryGetProperty("prompt_tokens", out var p)) inputTokens = p.GetInt32();
             if (usage.TryGetProperty("completion_tokens", out var c)) outputTokens = c.GetInt32();
         }
+        var selected = root.GetProperty("choices")[0];
+        var choice = selected.GetProperty("message");
+        var finishReason = selected.TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String ? finish.GetString() : null;
+        var content = choice.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String
+            ? contentElement.GetString() ?? "" : "";
+        string? tool = null, arguments = null;
+        if (choice.TryGetProperty("tool_calls", out var calls) && calls.ValueKind == JsonValueKind.Array && calls.GetArrayLength() > 0)
+        {
+            var names = new List<string>();
+            var fields = new List<string[]>();
+            var valid = true;
+            foreach (var call in calls.EnumerateArray())
+            {
+                var functionInfo = call.TryGetProperty("function", out var f) ? f : default;
+                var rawName = functionInfo.ValueKind == JsonValueKind.Object && functionInfo.TryGetProperty("name", out var n) ? n.GetString() : null;
+                names.Add(rawName is "update_booking" or "create_demo_booking" ? rawName : "unrecognized_function");
+                var rawArgs = functionInfo.ValueKind == JsonValueKind.Object && functionInfo.TryGetProperty("arguments", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null;
+                try
+                {
+                    using var parsed = JsonDocument.Parse(rawArgs ?? "");
+                    if (parsed.RootElement.ValueKind != JsonValueKind.Object) { valid = false; fields.Add([]); }
+                    else fields.Add(parsed.RootElement.EnumerateObject().Select(p => p.Name is "customerName" or "email" or "product" or "preferredDate" or "timeZone" ? p.Name : "unrecognized_field").ToArray());
+                }
+                catch (JsonException) { valid = false; fields.Add([]); }
+            }
+            var diagnostic = new NativeToolDiagnostic(calls.GetArrayLength(), names.ToArray(), finishReason, valid,
+                fields.ToArray(), (int)response.StatusCode, inputTokens, outputTokens,
+                calls.GetArrayLength() == 1 ? null : "multiple_tool_calls");
+            observe?.Invoke(diagnostic);
+            if (calls.GetArrayLength() != 1) throw new LlmResponseParseException("Expected exactly one model tool call.", inputTokens, outputTokens, diagnostic);
+            var function = calls[0].GetProperty("function");
+            tool = function.GetProperty("name").GetString();
+            arguments = function.GetProperty("arguments").GetString();
+        }
+        else observe?.Invoke(new(0, [], finishReason, null, [], (int)response.StatusCode, inputTokens, outputTokens, null));
         return new(content, tool, arguments, inputTokens, outputTokens);
     }
 }

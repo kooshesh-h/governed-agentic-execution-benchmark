@@ -17,6 +17,7 @@ public sealed class ExecutionState
     public List<ConversationEntry> Messages { get; set; } = [];
     public List<ToolAttempt> ToolAttempts { get; set; } = [];
     public List<ModelToolCall> ModelToolCalls { get; set; } = [];
+    public List<Kooshi.Benchmark.Shared.NativeToolDiagnostic> NativeToolDiagnostics { get; set; } = [];
     public string? ProposedBookingArguments { get; set; }
     public List<BusinessEffect> BusinessEffects { get; set; } = [];
     public List<string> ValidationErrors { get; set; } = [];

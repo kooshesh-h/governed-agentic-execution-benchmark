@@ -34,6 +34,13 @@ public class RealModeTransportTests
         Assert.Equal(17, decision.OutputTokens);
         Assert.Contains("Please book an Analytics demo", handler.RequestBody);
         Assert.Contains("create_demo_booking", handler.RequestBody);
+        using (var request = JsonDocument.Parse(handler.RequestBody))
+        {
+            Assert.False(request.RootElement.GetProperty("parallel_tool_calls").GetBoolean());
+            Assert.Equal("auto", request.RootElement.GetProperty("tool_choice").GetString());
+        }
+        Assert.Single(state.NativeToolDiagnostics);
+        Assert.Equal(new[] { "create_demo_booking" }, state.NativeToolDiagnostics[0].ToolNames);
         Assert.Equal("Bearer fixture-key", handler.Authorization);
     }
 
@@ -68,6 +75,43 @@ public class RealModeTransportTests
         state.Messages.Add(new("user", "email: ada@example.org", DateTimeOffset.UtcNow));
         await Assert.ThrowsAsync<HttpRequestException>(() =>
             new Direct.OpenAiCompatibleLlmClient(new HttpClient(handler), Config("DirectLlm")).InterpretAsync(state, default));
+    }
+
+    [Fact]
+    public async Task MultipleToolCallsPreserveProviderUsageInParseFailure()
+    {
+        const string response = """{"choices":[{"message":{"tool_calls":[{"function":{"name":"update_booking","arguments":"{}"}},{"function":{"name":"create_demo_booking","arguments":"{}"}}]}}],"usage":{"prompt_tokens":123,"completion_tokens":45}}""";
+        var state = new Direct.ExecutionState();
+        state.Messages.Add(new("user", "Book a demo", DateTimeOffset.UtcNow));
+        var ex = await Assert.ThrowsAsync<LlmResponseParseException>(() =>
+            new Direct.OpenAiCompatibleLlmClient(new HttpClient(new RecordingHandler(response)), Config("DirectLlm"))
+                .InterpretAsync(state, default));
+        Assert.Equal(123, ex.InputTokens);
+        Assert.Equal(45, ex.OutputTokens);
+        Assert.Equal("multiple_tool_calls", ex.Diagnostic?.FailureClassification);
+        Assert.Equal(new[] { "update_booking", "create_demo_booking" }, state.NativeToolDiagnostics[0].ToolNames);
+    }
+
+    [Fact]
+    public async Task MultipleCallsFailExecutionWithoutBookingAndPreserveUsage()
+    {
+        const string response = """{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"function":{"name":"update_booking","arguments":"{\"email\":\"private@example.org\"}"}},{"function":{"name":"create_demo_booking","arguments":"not-json"}}]}}],"usage":{"prompt_tokens":123,"completion_tokens":45}}""";
+        var config = ServiceConfig("DirectLlm");
+        var store = new Direct.ExecutionStore(config);
+        var service = new Direct.ExecutionService(store,
+            new Direct.OpenAiCompatibleLlmClient(new HttpClient(new RecordingHandler(response)), config),
+            new Direct.SyntheticBookingToolExecutor(store, config), NullLogger<Direct.ExecutionService>.Instance);
+        var state = await service.CreateAsync(new("demo-booking", "Book a demo"), default);
+        Assert.Equal("failed", state.Status);
+        Assert.Equal(123, state.InputTokens);
+        Assert.Equal(45, state.OutputTokens);
+        Assert.Empty(state.BusinessEffects);
+        Assert.Empty(state.ModelToolCalls);
+        var diagnostic = Assert.Single(state.NativeToolDiagnostics);
+        Assert.Equal("multiple_tool_calls", diagnostic.FailureClassification);
+        Assert.False(diagnostic.ArgumentsValidJson);
+        Assert.Equal(new[] { "email" }, diagnostic.ArgumentFieldNames[0]);
+        Assert.DoesNotContain("private@example.org", JsonSerializer.Serialize(diagnostic));
     }
 
     [Fact]
@@ -142,6 +186,7 @@ public class RealModeTransportTests
         var confirmed = (await service.ConfirmAsync(created.Id, default))!;
         Assert.Equal("succeeded", confirmed.Status);
         Assert.Single(confirmed.BusinessEffects);
+        Assert.Equal(2, confirmed.NativeToolDiagnostics.Count);
     }
 
     private static IConfiguration Config(string prefix) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

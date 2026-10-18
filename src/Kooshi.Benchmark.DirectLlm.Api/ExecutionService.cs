@@ -159,6 +159,12 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
         var start = System.Diagnostics.Stopwatch.GetTimestamp();
         LlmDecision decision;
         try { decision = await llm.InterpretAsync(state, ct); }
+        catch (Kooshi.Benchmark.Shared.LlmResponseParseException ex)
+        {
+            if (ex.InputTokens is not null) state.InputTokens = (state.InputTokens ?? 0) + ex.InputTokens;
+            if (ex.OutputTokens is not null) state.OutputTokens = (state.OutputTokens ?? 0) + ex.OutputTokens;
+            throw;
+        }
         finally { state.LlmRequestMilliseconds = (state.LlmRequestMilliseconds ?? 0) + System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds; }
         if (decision.InputTokens is not null) state.InputTokens = (state.InputTokens ?? 0) + decision.InputTokens;
         if (decision.OutputTokens is not null) state.OutputTokens = (state.OutputTokens ?? 0) + decision.OutputTokens;

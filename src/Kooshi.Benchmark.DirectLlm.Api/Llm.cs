@@ -60,9 +60,12 @@ public sealed class OpenAiCompatibleLlmClient(HttpClient http, IConfiguration co
                 new { type = "function", function = new { name = "update_booking", description = "Record incomplete or corrected booking fields without executing a business operation", parameters = new { type = "object", properties = new { customerName = new { type = "string" }, email = new { type = "string" }, product = new { type = "string" }, preferredDate = new { type = "string" }, timeZone = new { type = "string" } }, additionalProperties = false } } },
                 new { type = "function", function = new { name = "create_demo_booking", description = "Propose a demo booking for later human confirmation; this call itself has no side effect", parameters = new { type = "object", properties = new { customerName = new { type = "string" }, email = new { type = "string" }, product = new { type = "string" }, preferredDate = new { type = "string" }, timeZone = new { type = "string" } }, required = new[] { "customerName", "email", "product", "preferredDate", "timeZone" }, additionalProperties = false } } }
             },
-            tool_choice = "auto"
+            tool_choice = "auto",
+            // Introduced after the incomplete Phase 8B feasibility pilot. The model still selects the tool and arguments.
+            parallel_tool_calls = bool.TryParse(configuration["DirectLlm:ParallelToolCalls"], out var enabled) && enabled
         };
-        var result = await OpenAiCompatibleTransport.SendAsync(http, settings.Endpoint, settings.ApiKey, payload, ct);
+        var result = await OpenAiCompatibleTransport.SendAsync(http, settings.Endpoint, settings.ApiKey, payload, ct,
+            diagnostic => state.NativeToolDiagnostics.Add(diagnostic));
         return new LlmDecision(result.Message, result.ToolName, result.Arguments, result.InputTokens, result.OutputTokens);
     }
 }
