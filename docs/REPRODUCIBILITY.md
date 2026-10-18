@@ -1,5 +1,7 @@
 # Reproducing the research prototype
 
+**Phase 8A.1 update:** The local runner launches built API DLLs directly. Build Debug before the normal local benchmark; set `KOOSHI_API_CONFIGURATION=Release` after a Release build. For an isolated custom output folder, set `KOOSHI_API_BIN_DIRECTORY` to its directory name (for example `Phase8A1`) before running the runner. The runner still checks each child `/health` response. Real mode additionally requires `KOOSHI_REAL_LLM_AUTHORIZED=yes`, an explicit model, `--max-llm-requests`, `--max-estimated-usd`, `--input-usd-per-million`, and `--output-usd-per-million`. These thresholds are estimates checked between runs, not guaranteed provider spending limits. The Phase 8A.1 local suite passed 54 tests and the 21-run simulated benchmark passed with restart enabled in an environment permitting loopback sockets.
+
 ## Prerequisites and layout
 
 The GitHub Actions workflow runs Docker on a GitHub-hosted Ubuntu runner; Docker is not required on the development computer. Local builds use .NET SDK 10. Docker Engine with Compose v2 and Linux container support is needed only for the optional direct Docker commands below. Run commands from the repository root, the directory containing `Kooshi.ArchitectureBenchmark.slnx`. `src/` contains the three APIs, shared contracts, and runner; `scenarios/` contains seven JSON conditions; `tests/` contains xUnit tests; `docs/` contains protocol and limitations; `results/` is local generated output.

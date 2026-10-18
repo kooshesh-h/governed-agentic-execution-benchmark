@@ -110,7 +110,10 @@ public sealed class WorkflowService(ExecutionStore store, ILlmClient llm, IBusin
         try
         {
             state.LlmCalls++;
-            var decision = await llm.InterpretAsync(state, ct);
+            var llmStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            LlmDecision decision;
+            try { decision = await llm.InterpretAsync(state, ct); }
+            finally { state.LlmRequestMilliseconds = (state.LlmRequestMilliseconds ?? 0) + System.Diagnostics.Stopwatch.GetElapsedTime(llmStart).TotalMilliseconds; }
             if (decision.InputTokens is not null) state.InputTokens = (state.InputTokens ?? 0) + decision.InputTokens;
             if (decision.OutputTokens is not null) state.OutputTokens = (state.OutputTokens ?? 0) + decision.OutputTokens;
             if (decision.ToolName == "update_booking")
@@ -136,7 +139,7 @@ public sealed class WorkflowService(ExecutionStore store, ILlmClient llm, IBusin
         {
             logger.LogError(ex, "Interpretation failed for {ExecutionId}", state.Id);
             WorkflowTransitions.Move(state, WorkflowStage.Failed);
-            state.Failures.Add(ex.Message);
+            state.Failures.Add("llm_interpretation_error: " + ex.Message);
             state.Response = "LLM interpretation failed. Send another message.";
         }
     }
@@ -146,7 +149,10 @@ public sealed class WorkflowService(ExecutionStore store, ILlmClient llm, IBusin
         var args = JsonSerializer.Serialize(state.Booking);
         try
         {
-            var result = await tool.ExecuteAsync(state, "create_demo_booking", args, ct);
+            var toolStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            ToolResult result;
+            try { result = await tool.ExecuteAsync(state, "create_demo_booking", args, ct); }
+            finally { state.DownstreamOperationMilliseconds = (state.DownstreamOperationMilliseconds ?? 0) + System.Diagnostics.Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds; }
             state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, "create_demo_booking", args, result.Outcome, result.Error, DateTimeOffset.UtcNow));
             if (result.Committed && result.BookingId is not null) state.BusinessEffects.Add(new(result.BookingId, DateTimeOffset.UtcNow));
             if (result.Success)
@@ -174,5 +180,3 @@ public sealed class WorkflowService(ExecutionStore store, ILlmClient llm, IBusin
         state.Messages.Add(new("assistant", state.Response!, DateTimeOffset.UtcNow));
     }
 }
-
-

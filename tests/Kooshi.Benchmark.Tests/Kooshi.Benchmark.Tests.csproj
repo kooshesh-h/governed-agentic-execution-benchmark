@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <Content Include="..\..\scenarios\*.json" Link="scenarios\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scenarios\variants\*.json" Link="scenarios\variants\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\pilot\*.json" Link="pilot\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,6 +4,7 @@ public sealed record ConversationEntry(string Role, string Content, DateTimeOffs
 public sealed record ToolAttempt(int Number, string Name, string Arguments, string Outcome, string? Error, DateTimeOffset At);
 public sealed record ExecutionEvent(string Type, string Detail, DateTimeOffset At);
 public sealed record BusinessEffect(string BookingId, DateTimeOffset At);
+public sealed record ModelToolCall(string Name, string Arguments, DateTimeOffset At);
 
 public sealed class ExecutionState
 {
@@ -15,6 +16,8 @@ public sealed class ExecutionState
     public string? Response { get; set; }
     public List<ConversationEntry> Messages { get; set; } = [];
     public List<ToolAttempt> ToolAttempts { get; set; } = [];
+    public List<ModelToolCall> ModelToolCalls { get; set; } = [];
+    public string? ProposedBookingArguments { get; set; }
     public List<BusinessEffect> BusinessEffects { get; set; } = [];
     public List<string> ValidationErrors { get; set; } = [];
     public List<string> Failures { get; set; } = [];
@@ -25,10 +28,12 @@ public sealed class ExecutionState
     public int LlmCalls { get; set; }
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
+    public double? LlmRequestMilliseconds { get; set; }
+    public double? DownstreamOperationMilliseconds { get; set; }
     public Kooshi.Benchmark.Shared.ExecutionMetrics Metrics => Kooshi.Benchmark.Shared.ExecutionMetricRules.Create(
         Architecture, ScenarioId, Id, Status, StartedAt, CompletedAt, Messages.Count(m => m.Role == "user"),
         LlmCalls, InputTokens, OutputTokens, ToolAttempts.Select(t => t.Outcome), BusinessEffects.Count,
-        null, null, null, Events.Select(e => e.Type), Failures);
+        null, null, null, Events.Select(e => e.Type), Failures, LlmRequestMilliseconds, DownstreamOperationMilliseconds);
 
 }
 

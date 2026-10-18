@@ -1,0 +1,15 @@
+{
+  "variantSet": "natural-language-v1",
+  "status": "candidate-not-primary",
+  "pairedAcrossArchitectures": true,
+  "booking": { "customerName": "Ada Lovelace", "email": "ada@example.org", "product": "Analytics", "preferredDate": "2030-11-01", "timeZone": "UTC" },
+  "variants": [
+    { "scenarioId": "successful-booking", "initial": "Please arrange an Analytics demo for Ada Lovelace. You can reach her at ada@example.org. November 1, 2030 works, and her time zone is UTC.", "followUps": [], "action": "confirm", "fault": "success" },
+    { "scenarioId": "invalid-fields", "initial": "Could you book an Analytics demo for Ada Lovelace on November 1, 2030, UTC? I think her email is invalid.", "followUps": ["Sorry, her email is ada@example.org. Please correct that before booking."], "action": "confirm", "fault": "success" },
+    { "scenarioId": "cancellation", "initial": "I would like an Analytics demo for Ada Lovelace on November 1, 2030, UTC; her email is ada@example.org.", "followUps": [], "action": "cancel", "fault": "success" },
+    { "scenarioId": "transient-retry", "initial": "Please set up Ada Lovelace for an Analytics demo on November 1, 2030 in UTC. Her email is ada@example.org.", "followUps": [], "action": "retry", "fault": "transient" },
+    { "scenarioId": "duplicate-replay", "initial": "Book an Analytics demo for Ada Lovelace, ada@example.org, on November 1, 2030 in UTC.", "followUps": [], "action": "replay", "fault": "success" },
+    { "scenarioId": "reconnection", "initial": "Ada Lovelace wants an Analytics demo.", "followUps": ["Her email is ada@example.org. November 1, 2030 in UTC works."], "action": "confirm", "fault": "success" },
+    { "scenarioId": "unauthorized", "initial": "Please start the disallowed operation for Ada Lovelace rather than the demo-booking process.", "followUps": [], "action": "none", "fault": "success" }
+  ]
+}

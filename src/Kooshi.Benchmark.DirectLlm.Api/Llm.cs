@@ -27,7 +27,15 @@ public sealed class SimulatedLlmClient : ILlmClient
             fields[key] = match.Groups[2].Value.Trim();
         }
         if (fields.Count > 0)
+        {
+            var candidate = new Booking { CustomerName = state.Booking.CustomerName, Email = state.Booking.Email,
+                Product = state.Booking.Product, PreferredDate = state.Booking.PreferredDate, TimeZone = state.Booking.TimeZone };
+            BookingRules.Merge(candidate, JsonSerializer.SerializeToElement(fields));
+            if (BookingRules.Validate(candidate).Count == 0)
+                return Task.FromResult(new LlmDecision("I propose a demo booking for review.", "create_demo_booking",
+                    JsonSerializer.Serialize(candidate)));
             return Task.FromResult(new LlmDecision("I recorded the booking details.", "update_booking", JsonSerializer.Serialize(fields)));
+        }
         return Task.FromResult(new LlmDecision("Please provide customerName, email, product, preferredDate (YYYY-MM-DD), and timeZone. You may send them as field: value pairs.", null, null));
     }
 }
@@ -39,7 +47,7 @@ public sealed class OpenAiCompatibleLlmClient(HttpClient http, IConfiguration co
         var settings = LlmSettings.Read(key => configuration[key], "DirectLlm");
         var messages = new List<object>
         {
-            new { role = "system", content = "You assist with demo bookings. Use update_booking to extract or correct only details provided by the user. Required fields: customerName, email, product, preferredDate (YYYY-MM-DD), timeZone (IANA/Windows identifier). Never claim a booking was committed. Confirmation and actual execution are performed by the API only after explicit user confirmation. Do not request other tools." }
+            new { role = "system", content = "You assist with demo bookings. Required fields: customerName, email, product, preferredDate (YYYY-MM-DD), timeZone (IANA/Windows identifier). Use update_booking for incomplete or invalid details. Once all details are supplied, propose create_demo_booking with all five fields. A proposal does not execute anything; the API validates it and waits for explicit user confirmation. Never claim a booking was committed. Do not request other tools. Current collected booking: " + JsonSerializer.Serialize(state.Booking) }
         };
         messages.AddRange(state.Messages.Select(m => (object)new { role = m.Role == "assistant" ? "assistant" : "user", content = m.Content }));
         var payload = new
@@ -48,7 +56,10 @@ public sealed class OpenAiCompatibleLlmClient(HttpClient http, IConfiguration co
             temperature = settings.Temperature,
             max_completion_tokens = settings.MaxOutputTokens,
             messages,
-            tools = new object[] { new { type = "function", function = new { name = "update_booking", description = "Provide booking fields found in the user's request", parameters = new { type = "object", properties = new { customerName = new { type = "string" }, email = new { type = "string" }, product = new { type = "string" }, preferredDate = new { type = "string" }, timeZone = new { type = "string" } }, additionalProperties = false } } } },
+            tools = new object[] {
+                new { type = "function", function = new { name = "update_booking", description = "Record incomplete or corrected booking fields without executing a business operation", parameters = new { type = "object", properties = new { customerName = new { type = "string" }, email = new { type = "string" }, product = new { type = "string" }, preferredDate = new { type = "string" }, timeZone = new { type = "string" } }, additionalProperties = false } } },
+                new { type = "function", function = new { name = "create_demo_booking", description = "Propose a demo booking for later human confirmation; this call itself has no side effect", parameters = new { type = "object", properties = new { customerName = new { type = "string" }, email = new { type = "string" }, product = new { type = "string" }, preferredDate = new { type = "string" }, timeZone = new { type = "string" } }, required = new[] { "customerName", "email", "product", "preferredDate", "timeZone" }, additionalProperties = false } } }
+            },
             tool_choice = "auto"
         };
         var result = await OpenAiCompatibleTransport.SendAsync(http, settings.Endpoint, settings.ApiKey, payload, ct);

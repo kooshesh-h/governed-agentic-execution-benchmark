@@ -40,7 +40,6 @@ services:
     build: { context: ., dockerfile: Dockerfile, target: benchmark }
     volumes: ["./results:/benchmark/results"]
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DirectLlm__Endpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}
       WorkflowAgent__Endpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}
       ProcessBound__Endpoint: ${LLM_ENDPOINT:-https://api.openai.com/v1/chat/completions}

@@ -28,6 +28,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS benchmark
 WORKDIR /benchmark
 COPY Kooshi.ArchitectureBenchmark.slnx .
 COPY scenarios/ scenarios/
+COPY pilot/ pilot/
 COPY --from=build /publish/runner/ runner/
 COPY --from=build /publish/Kooshi.Benchmark.DirectLlm.Api/ published/Kooshi.Benchmark.DirectLlm.Api/
 COPY --from=build /publish/Kooshi.Benchmark.WorkflowAgent.Api/ published/Kooshi.Benchmark.WorkflowAgent.Api/

@@ -7,7 +7,8 @@ public sealed record ExecutionMetrics(
     int ToolInvocationAttempts, int CommittedBusinessEffects, int? DuplicateCommittedEffects,
     int UnauthorizedToolAttempts, int? UnauthorizedCommittedExecutions,
     int? ConfirmationViolations, int RetryAttempts, int RecoveryAttempts,
-    int RecoveryOutcomes, IReadOnlyList<string> ErrorCategories);
+    int RecoveryOutcomes, IReadOnlyList<string> ErrorCategories,
+    double? LlmRequestMilliseconds = null, double? DownstreamOperationMilliseconds = null);
 
 public static class ExecutionMetricRules
 {
@@ -15,7 +16,8 @@ public static class ExecutionMetricRules
         DateTimeOffset started, DateTimeOffset? completed, int userTurns, int? llmRequests,
         int? inputTokens, int? outputTokens, IEnumerable<string> toolOutcomes,
         int committedEffects, int? duplicateEffects, int? unauthorizedCommitted,
-        int? confirmationViolations, IEnumerable<string> eventTypes, IEnumerable<string> failures)
+        int? confirmationViolations, IEnumerable<string> eventTypes, IEnumerable<string> failures,
+        double? llmRequestMilliseconds = null, double? downstreamOperationMilliseconds = null)
     {
         var outcomes = toolOutcomes.ToArray();
         var events = eventTypes.ToArray();
@@ -29,6 +31,6 @@ public static class ExecutionMetricRules
             confirmationViolations, events.Count(x => x == "recovery_attempt"),
             events.Count(x => x == "recovery_attempt" || x == "recovery_succeeded" || x == "recovery_failed"),
             events.Count(x => x == "recovery_succeeded" || x == "recovery_failed"),
-            categories);
+            categories, llmRequestMilliseconds, downstreamOperationMilliseconds);
     }
 }

@@ -1,4 +1,5 @@
 using Kooshi.Benchmark.Shared;
+using System.Text.Json;
 
 namespace Kooshi.Benchmark.DirectLlm.Api;
 
@@ -47,6 +48,7 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
             var now = DateTimeOffset.UtcNow;
             if (action == "cancel" && state.Status is not ("succeeded" or "cancelled"))
             {
+                state.ProposedBookingArguments = null;
                 state.Status = "cancelled";
                 state.CompletedAt = now;
                 state.Response = "Booking cancelled.";
@@ -74,18 +76,44 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
         try
         {
             state.LlmCalls++;
-            var decision = await llm.InterpretAsync(state, ct);
+            var llmStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            LlmDecision decision;
+            try { decision = await llm.InterpretAsync(state, ct); }
+            finally { state.LlmRequestMilliseconds = (state.LlmRequestMilliseconds ?? 0) + System.Diagnostics.Stopwatch.GetElapsedTime(llmStart).TotalMilliseconds; }
             if (decision.InputTokens is not null) state.InputTokens = (state.InputTokens ?? 0) + decision.InputTokens;
             if (decision.OutputTokens is not null) state.OutputTokens = (state.OutputTokens ?? 0) + decision.OutputTokens;
             if (decision.ToolName is not null)
             {
-                var result = await tools.ExecuteAsync(state, decision.ToolName, decision.Arguments ?? "{}", ct);
-                state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, decision.ToolName, decision.Arguments ?? "{}", result.Outcome, result.Error, DateTimeOffset.UtcNow));
-                if (!result.Success) state.Failures.Add(result.Error ?? result.Outcome);
+                var arguments = decision.Arguments ?? "{}";
+                state.ModelToolCalls.Add(new(decision.ToolName, arguments, DateTimeOffset.UtcNow));
+                state.ProposedBookingArguments = null;
+                if (decision.ToolName == "create_demo_booking")
+                {
+                    try
+                    {
+                        using var document = JsonDocument.Parse(arguments);
+                        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                            document.RootElement.EnumerateObject().Any(p => p.Name.ToLowerInvariant() is not ("customername" or "email" or "product" or "preferreddate" or "timezone")))
+                            throw new JsonException("Unexpected booking arguments.");
+                        var proposed = new Booking();
+                        BookingRules.Merge(proposed, document.RootElement);
+                        if (BookingRules.Validate(proposed).Count > 0) throw new JsonException("Proposed booking is incomplete or invalid.");
+                        state.Booking = proposed;
+                        state.ProposedBookingArguments = JsonSerializer.Serialize(proposed);
+                    }
+                    catch (JsonException ex) { state.Failures.Add(ex.Message); }
+                }
+                else
+                {
+                    var result = await tools.ExecuteAsync(state, decision.ToolName, arguments, ct);
+                    state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, decision.ToolName, arguments, result.Outcome, result.Error, DateTimeOffset.UtcNow));
+                    if (!result.Success) state.Failures.Add(result.Error ?? result.Outcome);
+                }
             }
             state.ValidationErrors = BookingRules.Validate(state.Booking);
-            state.Status = state.ValidationErrors.Count == 0 ? "ready" : "collecting";
-            state.Response = state.Status == "ready" ? "Please review the booking details and confirm." : $"Please provide or correct: {string.Join("; ", state.ValidationErrors)}";
+            state.Status = state.ValidationErrors.Count == 0 && state.ProposedBookingArguments is not null ? "ready" : "collecting";
+            state.Response = state.Status == "ready" ? "Please review the model-proposed booking details and confirm." :
+                state.ValidationErrors.Count > 0 ? $"Please provide or correct: {string.Join("; ", state.ValidationErrors)}" : "Please provide a booking request so I can propose the operation.";
             if (!string.IsNullOrWhiteSpace(decision.Message)) state.Messages.Add(new("assistant", decision.Message, DateTimeOffset.UtcNow));
             state.Messages.Add(new("assistant", state.Response, DateTimeOffset.UtcNow));
         }
@@ -93,17 +121,26 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
         {
             logger.LogError(ex, "LLM interpretation failed for execution {ExecutionId}", state.Id);
             state.Status = "failed";
-            state.Failures.Add(ex.Message);
+            state.Failures.Add("llm_interpretation_error: " + ex.Message);
             state.Response = "LLM interpretation failed. Retry or send another message.";
         }
     }
 
     private async Task ExecuteBookingAsync(ExecutionState state, CancellationToken ct)
     {
-        var args = System.Text.Json.JsonSerializer.Serialize(state.Booking);
+        var args = state.ProposedBookingArguments;
+        if (args is null)
+        {
+            state.Status = "failed";
+            state.Failures.Add("No model-proposed booking operation exists.");
+            return;
+        }
         try
         {
-            var result = await tools.ExecuteAsync(state, "create_demo_booking", args, ct);
+            var toolStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            ToolResult result;
+            try { result = await tools.ExecuteAsync(state, "create_demo_booking", args, ct); }
+            finally { state.DownstreamOperationMilliseconds = (state.DownstreamOperationMilliseconds ?? 0) + System.Diagnostics.Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds; }
             state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, "create_demo_booking", args, result.Outcome, result.Error, DateTimeOffset.UtcNow));
             if (result.Committed && result.BookingId is not null) state.BusinessEffects.Add(new(result.BookingId, DateTimeOffset.UtcNow));
             if (result.Success)
@@ -131,6 +168,3 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
         state.Messages.Add(new("assistant", state.Response!, DateTimeOffset.UtcNow));
     }
 }
-
-
-

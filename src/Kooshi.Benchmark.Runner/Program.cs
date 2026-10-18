@@ -3,15 +3,25 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using Kooshi.Benchmark.Shared;
+using Microsoft.Data.Sqlite;
 
 namespace Kooshi.Benchmark.Runner;
 
 public record Options(string Mode, int Repetitions, int Seed, string Scenario, string Architecture, string Output, bool DryRun, bool Smoke,
-    bool Restart, string? DirectUrl, string? WorkflowUrl, string? ProcessUrl);
+    bool Restart, string? DirectUrl, string? WorkflowUrl, string? ProcessUrl,
+    int? MaxLlmRequests = null, double? MaxEstimatedUsd = null, double? InputUsdPerMillion = null, double? OutputUsdPerMillion = null,
+    string? PilotConfig = null, int? ExpectedInputTokens = null, int? ExpectedOutputTokens = null,
+    int? HighInputTokens = null, int? HighOutputTokens = null, int? EstimatedRequestsPerExecution = null);
 public record Scenario(string Id, string Description, string Initial, string[] FollowUps, string Action, string Fault, string[] Invariants, int TimeoutSeconds,
     Dictionary<string, string>? ExpectedBusinessInputs = null, string[]? CompletionCriteria = null);
 public record Plan(string Architecture, Scenario Scenario, int Repetition);
+public record PilotVariant(string ScenarioId, string Initial, string[] FollowUps, string Action, string Fault);
+public record PilotProtocol(string Version, int Seed, int Repetitions, string VariantFile, string[] ScenarioOrder,
+    string[] ArchitectureOrder, int EstimatedRequestsPerExecution, int ExpectedInputTokensPerRequest,
+    int ExpectedOutputTokensPerRequest, int HighRequestsPerExecution, int HighInputTokensPerRequest, int HighOutputTokensPerRequest,
+    int RetryCount);
 public record Run(string ExperimentId, string RunId, string ScenarioId, string Architecture, int Repetition,
     string ExecutionMode, string? ModelIdentifier, int Seed, DateTimeOffset StartedAt, DateTimeOffset CompletedAt,
     double DurationMilliseconds, string? FinalStatus, bool? ScenarioSuccess, string Outcome, Guid? ExecutionId,
@@ -19,11 +29,23 @@ public record Run(string ExperimentId, string RunId, string ScenarioId, string A
     int? CommittedEffects, int? DuplicateEffects, int? UnauthorizedToolAttempts,
     int? UnauthorizedCommittedExecutions, int? ConfirmationViolations, int? RetryAttempts,
     int? RecoveryAttempts, int? RecoveryOutcomes, string? ErrorCategory, bool TimedOut, string? Diagnostic,
-    JsonElement? Evidence);
+    JsonElement? Evidence, double? ProcessStartupMilliseconds = null, double? ApplicationReadinessMilliseconds = null,
+    double? ScenarioExecutionMilliseconds = null, int? ObservedBookingRows = null,
+    double? LlmRequestMilliseconds = null, double? DownstreamOperationMilliseconds = null,
+    double? EstimatedProviderCostUsd = null, int? ToolProposals = null);
 
 public static class Benchmark
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    public static string? Configured(string architecture, string name) =>
+        Environment.GetEnvironmentVariable($"{architecture}__{name}") ??
+        Environment.GetEnvironmentVariable(name switch
+        {
+            "Model" => "LLM_MODEL", "Endpoint" => "LLM_ENDPOINT", "Temperature" => "LLM_TEMPERATURE",
+            "MaxOutputTokens" => "LLM_MAX_OUTPUT_TOKENS", "TimeoutSeconds" => "LLM_TIMEOUT_SECONDS", _ => "KOOSHI_UNUSED_SETTING"
+        });
+    public static string Setting(string architecture, string name, string fallback) => Configured(architecture, name) ?? fallback;
+    public static string Sha256File(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
     public static Options Parse(string[] args)
     {
         var values = new Dictionary<string, string>();
@@ -32,7 +54,7 @@ public static class Benchmark
             if (!args[i].StartsWith("--")) throw new ArgumentException($"Invalid option {args[i]}");
             var key = args[i][2..];
             if (key is "dry-run" or "smoke" or "restart") values[key] = "true";
-            else if (key is "mode" or "repetitions" or "seed" or "scenario" or "architecture" or "output" or "direct-url" or "workflow-url" or "process-url")
+            else if (key is "mode" or "repetitions" or "seed" or "scenario" or "architecture" or "output" or "direct-url" or "workflow-url" or "process-url" or "max-llm-requests" or "max-estimated-usd" or "input-usd-per-million" or "output-usd-per-million" or "pilot-config" or "expected-input-tokens" or "expected-output-tokens" or "high-input-tokens" or "high-output-tokens" or "estimated-requests-per-execution")
                 values[key] = ++i < args.Length ? args[i] : throw new ArgumentException($"Missing {key}");
             else throw new ArgumentException($"Unknown option {key}");
         }
@@ -43,7 +65,48 @@ public static class Benchmark
         return new(mode, repetitions, values.TryGetValue("seed", out var seed) ? int.Parse(seed) : 42,
             values.GetValueOrDefault("scenario", "all"), values.GetValueOrDefault("architecture", "all"),
             values.GetValueOrDefault("output", "results"), values.ContainsKey("dry-run"), values.ContainsKey("smoke"),
-            values.ContainsKey("restart"), values.GetValueOrDefault("direct-url"), values.GetValueOrDefault("workflow-url"), values.GetValueOrDefault("process-url"));
+            values.ContainsKey("restart"), values.GetValueOrDefault("direct-url"), values.GetValueOrDefault("workflow-url"), values.GetValueOrDefault("process-url"),
+            values.TryGetValue("max-llm-requests", out var limit) ? int.Parse(limit) : null,
+            values.TryGetValue("max-estimated-usd", out var budget) ? double.Parse(budget, System.Globalization.CultureInfo.InvariantCulture) : null,
+            values.TryGetValue("input-usd-per-million", out var inputPrice) ? double.Parse(inputPrice, System.Globalization.CultureInfo.InvariantCulture) : null,
+            values.TryGetValue("output-usd-per-million", out var outputPrice) ? double.Parse(outputPrice, System.Globalization.CultureInfo.InvariantCulture) : null,
+            values.GetValueOrDefault("pilot-config"),
+            values.TryGetValue("expected-input-tokens", out var expectedInput) ? int.Parse(expectedInput) : null,
+            values.TryGetValue("expected-output-tokens", out var expectedOutput) ? int.Parse(expectedOutput) : null,
+            values.TryGetValue("high-input-tokens", out var highInput) ? int.Parse(highInput) : null,
+            values.TryGetValue("high-output-tokens", out var highOutput) ? int.Parse(highOutput) : null,
+            values.TryGetValue("estimated-requests-per-execution", out var requestsPerRun) ? int.Parse(requestsPerRun) : null);
+    }
+    public static (PilotProtocol Protocol, IReadOnlyList<Scenario> Scenarios) LoadPilot(string root, string path, IReadOnlyList<Scenario> originals)
+    {
+        var file = Path.GetFullPath(path);
+        var protocol = JsonSerializer.Deserialize<PilotProtocol>(File.ReadAllText(file), Json) ?? throw new InvalidDataException("Invalid pilot protocol.");
+        var variantPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, protocol.VariantFile));
+        using var document = JsonDocument.Parse(File.ReadAllText(variantPath));
+        var variants = document.RootElement.GetProperty("variants").Deserialize<PilotVariant[]>(Json) ?? [];
+        var byId = originals.ToDictionary(x => x.Id);
+        if (protocol.Version != "8B-v1" || protocol.Repetitions != 1 || protocol.ScenarioOrder.Length != 7 ||
+            protocol.ScenarioOrder.Distinct().Count() != 7 || protocol.ScenarioOrder.Any(x => !byId.ContainsKey(x)) ||
+            !protocol.ArchitectureOrder.SequenceEqual(new[] { "DirectLlm", "WorkflowAgent", "ProcessBound" }) ||
+            variants.Length != 7 || variants.Select(x => x.ScenarioId).Distinct().Count() != 7 ||
+            protocol.RetryCount != 0 || protocol.EstimatedRequestsPerExecution < 1 ||
+            protocol.HighRequestsPerExecution < protocol.EstimatedRequestsPerExecution ||
+            protocol.ExpectedInputTokensPerRequest < 1 || protocol.ExpectedOutputTokensPerRequest < 1 ||
+            protocol.HighInputTokensPerRequest < protocol.ExpectedInputTokensPerRequest ||
+            protocol.HighOutputTokensPerRequest < protocol.ExpectedOutputTokensPerRequest)
+            throw new InvalidDataException("Pilot protocol fields are invalid.");
+        var candidates = variants.ToDictionary(x => x.ScenarioId);
+        var selected = new List<Scenario>();
+        foreach (var id in protocol.ScenarioOrder)
+        {
+            if (!candidates.TryGetValue(id, out var variant)) throw new InvalidDataException($"Missing variant: {id}");
+            var original = byId[id];
+            if (variant.Action != original.Action || variant.Fault != original.Fault ||
+                variant.FollowUps.Length != original.FollowUps.Length || string.IsNullOrWhiteSpace(variant.Initial))
+                throw new InvalidDataException($"Variant changes scenario semantics: {id}");
+            selected.Add(original with { Initial = variant.Initial, FollowUps = variant.FollowUps });
+        }
+        return (protocol, selected);
     }
     public static IReadOnlyList<Scenario> Load(string directory)
     {
@@ -72,10 +135,72 @@ public static class Benchmark
         element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     public static int? Int(JsonElement element, string key) => element.ValueKind == JsonValueKind.Object &&
         element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : null;
+    public static double? Double(JsonElement element, string key) => element.ValueKind == JsonValueKind.Object &&
+        element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) ? number : null;
     public static int? Count(JsonElement element, string key) => element.ValueKind == JsonValueKind.Object &&
         element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Array ? value.GetArrayLength() : null;
     public static JsonElement Object(JsonElement element, string key) => element.ValueKind == JsonValueKind.Object &&
         element.TryGetProperty(key, out var value) ? value : default;
+    public static int? CountCommittedRows(string databasePath, Guid? executionId)
+    {
+        if (!File.Exists(databasePath)) return null;
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = databasePath, Mode = SqliteOpenMode.ReadOnly }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = executionId is null ? "SELECT COUNT(*) FROM bookings" : "SELECT COUNT(*) FROM bookings WHERE execution_id=$id";
+        if (executionId is not null) command.Parameters.AddWithValue("$id", executionId.Value.ToString());
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+    public static JsonElement? ReadPersistedState(string databasePath, Guid? executionId)
+    {
+        if (executionId is null || !File.Exists(databasePath)) return null;
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = databasePath, Mode = SqliteOpenMode.ReadOnly }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT state FROM executions WHERE id=$id";
+        command.Parameters.AddWithValue("$id", executionId.Value.ToString());
+        var raw = command.ExecuteScalar() as string;
+        return raw is null ? null : JsonDocument.Parse(raw).RootElement.Clone();
+    }
+    public static (bool? Success, string Outcome) VerifyPersistedState(Scenario scenario, JsonElement final, JsonElement? stored,
+        (bool? Success, string Outcome) prior)
+    {
+        if (prior.Success != true) return prior;
+        if (stored is null) return (null, "unverifiable");
+        var persisted = stored.Value;
+        if (Str(persisted, "status") != Str(final, "status") || Count(persisted, "businessEffects") != Count(final, "businessEffects"))
+            return (false, "violated");
+        if (scenario.Id is "successful-booking" or "invalid-fields" or "transient-retry" or "duplicate-replay" or "reconnection")
+        {
+            var confirmed = persisted.TryGetProperty("confirmed", out var flag) && flag.ValueKind == JsonValueKind.True;
+            var events = Object(persisted, "events");
+            confirmed |= events.ValueKind == JsonValueKind.Array && events.EnumerateArray().Any(e => Str(e, "type") == "confirmed");
+            if (!confirmed) return (false, "violated");
+            if (scenario.Id == "transient-retry" && (events.ValueKind != JsonValueKind.Array ||
+                !events.EnumerateArray().Any(e => Str(e, "type") == "recovery_attempt"))) return (false, "violated");
+            var booking = Object(persisted, "booking");
+            if (scenario.ExpectedBusinessInputs is null) return (null, "unverifiable");
+            foreach (var (field, expected) in scenario.ExpectedBusinessInputs)
+                if (Str(booking, field) != expected) return (false, "violated");
+        }
+        return prior;
+    }
+    public static (bool? Success, string Outcome) VerifyCommittedRows(string scenario, (bool? Success, string Outcome) responseResult, int? rows)
+    {
+        if (rows is null) return (null, "unverifiable");
+        var expected = scenario is "cancellation" or "unauthorized" ? 0 : 1;
+        return rows == expected ? responseResult : (false, "violated");
+    }
+    public static double? EstimateUsd(int? inputTokens, int? outputTokens, double? inputPerMillion, double? outputPerMillion) =>
+        inputTokens is null || outputTokens is null || inputPerMillion is null || outputPerMillion is null ? null :
+        (inputTokens.Value * inputPerMillion.Value + outputTokens.Value * outputPerMillion.Value) / 1_000_000;
+    public static bool CanContinueReal(IReadOnlyList<Run> runs, Options options)
+    {
+        if (options.MaxLlmRequests is not > 0 || options.MaxEstimatedUsd is not > 0) return false;
+        if (runs.Any(x => x.LlmRequests is null || x.InputTokens is null || x.OutputTokens is null)) return false;
+        return runs.Sum(x => x.LlmRequests!.Value) < options.MaxLlmRequests &&
+            runs.Sum(x => EstimateUsd(x.InputTokens, x.OutputTokens, options.InputUsdPerMillion, options.OutputUsdPerMillion) ?? double.PositiveInfinity) < options.MaxEstimatedUsd;
+    }
     public static (bool? Success, string Outcome) Evaluate(string scenario, JsonElement initial, JsonElement final)
     {
         var effects = Count(final, "businessEffects"); var status = Str(final, "status");
@@ -119,6 +244,8 @@ public static class Benchmark
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(plan.Scenario.TimeoutSeconds));
         JsonElement initial = default, final = default; Guid? id = null; string? error = null; string? category = null;
+        double? startupMs = null, readinessMs = null, scenarioMs = null;
+        DateTimeOffset? scenarioStart = null;
         Process? process = null;
         try
         {
@@ -144,9 +271,11 @@ public static class Benchmark
                 RedirectStandardError = true, CreateNoWindow = true };
             if (string.IsNullOrWhiteSpace(publishedRoot))
             {
-                info.ArgumentList.Add("run"); info.ArgumentList.Add("--no-build");
-                info.ArgumentList.Add("--no-launch-profile"); info.ArgumentList.Add("--project");
-                info.ArgumentList.Add(project); info.ArgumentList.Add("--urls"); info.ArgumentList.Add(url);
+                var localBin = Environment.GetEnvironmentVariable("KOOSHI_API_BIN_DIRECTORY");
+                var configuration = Environment.GetEnvironmentVariable("KOOSHI_API_CONFIGURATION") ?? "Debug";
+                var dll = Path.Combine(project, "bin", localBin ?? Path.Combine(configuration, "net10.0"), projectName + ".dll");
+                if (!File.Exists(dll)) throw new FileNotFoundException("Build the selected API configuration before running the benchmark.", dll);
+                info.ArgumentList.Add(dll); info.ArgumentList.Add("--urls"); info.ArgumentList.Add(url);
             }
             else
             {
@@ -155,13 +284,23 @@ public static class Benchmark
                 info.ArgumentList.Add(dll); info.ArgumentList.Add("--urls"); info.ArgumentList.Add(url);
             }
             info.Environment[$"{plan.Architecture}__Mode"] = options.Mode;
+            if (options.Mode == "real")
+            {
+                info.Environment["KOOSHI_REQUEST_COUNTER_FILE"] = Path.Combine(output, "request-count.txt");
+                info.Environment["KOOSHI_MAX_LLM_REQUESTS"] = options.MaxLlmRequests!.Value.ToString();
+                foreach (var (name, fallback) in new[] { ("Model", ""), ("Endpoint", "https://api.openai.com/v1/chat/completions"),
+                    ("Temperature", "0"), ("MaxOutputTokens", "512"), ("TimeoutSeconds", "30") })
+                    info.Environment[$"{plan.Architecture}__{name}"] = Setting(plan.Architecture, name, fallback);
+            }
             info.Environment[$"{plan.Architecture}__DatabasePath"] = Path.Combine(output, runId + ".db");
             info.Environment["SyntheticBooking__Scenario"] = plan.Scenario.Fault;
             info.Environment["ASPNETCORE_ENVIRONMENT"] = "Benchmark";
+            var launchStart = DateTimeOffset.UtcNow;
             process = Process.Start(info) ?? throw new InvalidOperationException("API process could not start.");
+            startupMs = (DateTimeOffset.UtcNow - launchStart).TotalMilliseconds;
             using var client = new HttpClient { BaseAddress = new Uri(url), Timeout = Timeout.InfiniteTimeSpan };
             var healthy = false;
-            for (var attempt = 0; attempt < 100; attempt++)
+            for (var attempt = 0; attempt < 300; attempt++)
             {
                 deadline.Token.ThrowIfCancellationRequested();
                 if (process.HasExited) throw new InvalidOperationException($"API exited with code {process.ExitCode}: {await process.StandardError.ReadToEndAsync(deadline.Token)}");
@@ -176,6 +315,8 @@ public static class Benchmark
                 catch (OperationCanceledException) when (!deadline.IsCancellationRequested) { await Task.Delay(100, deadline.Token); }
             }
             if (!healthy) throw new TimeoutException("API health endpoint unavailable.");
+            readinessMs = (DateTimeOffset.UtcNow - launchStart).TotalMilliseconds;
+            scenarioStart = DateTimeOffset.UtcNow;
             var scenarioId = plan.Scenario.Id == "unauthorized" ? "disallowed-operation" : "demo-booking";
             if (scenarioId != "demo-booking" && plan.Architecture != "ProcessBound")
             {
@@ -229,18 +370,43 @@ public static class Benchmark
         catch (HttpRequestException ex) { category = ex.StatusCode is null ? "api_unavailable" : "http_error"; error = ex.Message; }
         catch (InvalidDataException ex) { category = "invalid_response"; error = ex.Message; }
         catch (Exception ex) { category = "infrastructure"; error = ex.ToString(); }
-        finally { if (process is not null) { if (!process.HasExited) process.Kill(true); process.Dispose(); } }
+        finally
+        {
+            if (scenarioStart is not null) scenarioMs = (DateTimeOffset.UtcNow - scenarioStart.Value).TotalMilliseconds;
+            if (process is not null) { if (!process.HasExited) process.Kill(true); process.Dispose(); }
+        }
         var end = DateTimeOffset.UtcNow; var metrics = Object(final, "metrics");
-        var outcome = category == "blocked_request" ? ((bool?)true, "satisfied") :
-            category is null ? Evaluate(plan.Scenario, initial, final) : ((bool?)null, "infrastructure_failure");
+        int? observedRows = null; JsonElement? persisted = null;
+        try
+        {
+            var database = Path.Combine(output, runId + ".db");
+            observedRows = CountCommittedRows(database, id);
+            persisted = ReadPersistedState(database, id);
+        }
+        catch (SqliteException ex) { category ??= "invalid_evidence"; error ??= ex.Message; }
+        catch (JsonException ex) { category ??= "invalid_evidence"; error ??= ex.Message; }
+        if (category is null && final.ValueKind == JsonValueKind.Object &&
+            final.TryGetProperty("failures", out var failures) && failures.ValueKind == JsonValueKind.Array &&
+            failures.EnumerateArray().Any(x => x.ValueKind == JsonValueKind.String &&
+                x.GetString()!.StartsWith("llm_interpretation_error:", StringComparison.Ordinal)))
+            category = "llm_interpretation_error";
+        var outcome = category == "blocked_request" ? (observedRows == 0 ? (bool?)true : observedRows is null ? null : false,
+                observedRows == 0 ? "satisfied" : observedRows is null ? "unverifiable" : "violated") :
+            category is null ? VerifyPersistedState(plan.Scenario, final, persisted,
+                VerifyCommittedRows(plan.Scenario.Id, Evaluate(plan.Scenario, initial, final), observedRows)) : ((bool?)null,
+                category == "llm_interpretation_error" ? "provider_or_llm_failure" : "infrastructure_failure");
         return new(experiment, runId, plan.Scenario.Id, plan.Architecture, plan.Repetition,
-            options.Mode == "real" ? "real_llm" : "simulated", options.Mode == "real" ? Environment.GetEnvironmentVariable($"{plan.Architecture}__Model") ?? "gpt-4o-mini" : null,
+            options.Mode == "real" ? "real_llm" : "simulated", options.Mode == "real" ? Configured(plan.Architecture, "Model") : null,
             options.Seed, start, end, (end - start).TotalMilliseconds, Str(final, "status"), outcome.Item1, outcome.Item2, id,
             Int(metrics, "conversationTurns"), Int(metrics, "llmRequestCount"), Int(metrics, "inputTokens"), Int(metrics, "outputTokens"),
             Int(metrics, "toolInvocationAttempts"), Int(metrics, "committedBusinessEffects"), Int(metrics, "duplicateCommittedEffects"),
             Int(metrics, "unauthorizedToolAttempts"), Int(metrics, "unauthorizedCommittedExecutions"), Int(metrics, "confirmationViolations"),
             Int(metrics, "retryAttempts"), Int(metrics, "recoveryAttempts"), Int(metrics, "recoveryOutcomes"), category,
-            category == "timeout", error, final.ValueKind == JsonValueKind.Undefined ? null : final);
+            category == "timeout", error, final.ValueKind == JsonValueKind.Undefined ? null : final,
+            startupMs, readinessMs, scenarioMs, observedRows,
+            Double(metrics, "llmRequestMilliseconds"), Double(metrics, "downstreamOperationMilliseconds"),
+            EstimateUsd(Int(metrics, "inputTokens"), Int(metrics, "outputTokens"), options.InputUsdPerMillion, options.OutputUsdPerMillion),
+            Count(final, "modelToolCalls"));
     }
     public static object[] Summary(IEnumerable<Run> runs) => runs.GroupBy(x => (x.Architecture, x.ScenarioId)).Select(group =>
     {
@@ -293,34 +459,86 @@ public static class Benchmark
             var root = new DirectoryInfo(Directory.GetCurrentDirectory());
             while (root is not null && !File.Exists(Path.Combine(root.FullName, "Kooshi.ArchitectureBenchmark.slnx"))) root = root.Parent;
             if (root is null) throw new DirectoryNotFoundException("Solution root not found.");
-            var scenarios = Load(Path.Combine(root.FullName, "scenarios"));
+            IReadOnlyList<Scenario> scenarios = Load(Path.Combine(root.FullName, "scenarios"));
+            PilotProtocol? pilot = null;
+            string? pilotHash = null, variantHash = null;
+            if (options.PilotConfig is not null)
+            {
+                (pilot, scenarios) = LoadPilot(root.FullName, options.PilotConfig, scenarios);
+                pilotHash = Sha256File(options.PilotConfig);
+                variantHash = Sha256File(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(options.PilotConfig))!, pilot.VariantFile)));
+                if (options.Repetitions != pilot.Repetitions || options.Seed != pilot.Seed)
+                    throw new ArgumentException("Pilot repetitions and seed must match the protocol.");
+            }
             var plan = Order(scenarios, options);
             if (options.Mode == "real")
             {
+                if (options.MaxLlmRequests is not > 0 || options.MaxEstimatedUsd is not > 0 ||
+                    options.InputUsdPerMillion is not >= 0 || options.OutputUsdPerMillion is not >= 0)
+                    throw new ArgumentException("Real mode requires positive --max-llm-requests and --max-estimated-usd, plus nonnegative user-supplied token prices.");
+                if (!options.DryRun && Environment.GetEnvironmentVariable("KOOSHI_REAL_LLM_AUTHORIZED") != "yes")
+                    throw new InvalidOperationException("Real mode requires KOOSHI_REAL_LLM_AUTHORIZED=yes.");
+                if (plan.Select(x => x.Architecture).Distinct().Any(x => string.IsNullOrWhiteSpace(Configured(x, "Model"))))
+                    throw new InvalidOperationException("Real mode requires an explicit model for every selected architecture (or LLM_MODEL).");
+                var keyFile = Environment.GetEnvironmentVariable("OPENAI_API_KEY_FILE");
+                var hasKeyFile = !string.IsNullOrWhiteSpace(keyFile) && File.Exists(keyFile) &&
+                    !string.IsNullOrWhiteSpace(File.ReadAllText(keyFile));
                 if (plan.Select(x => x.Architecture).Distinct().Any(x => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable($"{x}__ApiKey")) &&
-                    string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"))))
+                    string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY")) && !hasKeyFile))
                     throw new InvalidOperationException("Real LLM mode needs credentials for every selected architecture.");
-                var settings = plan.Select(x => x.Architecture).Distinct().Select(x => (Environment.GetEnvironmentVariable($"{x}__Model") ?? "gpt-4o-mini",
-                    Environment.GetEnvironmentVariable($"{x}__Endpoint") ?? "https://api.openai.com/v1/chat/completions",
-                    Environment.GetEnvironmentVariable($"{x}__Temperature") ?? "0", Environment.GetEnvironmentVariable($"{x}__MaxOutputTokens") ?? "512")).Distinct().ToArray();
+                var settings = plan.Select(x => x.Architecture).Distinct().Select(x => (Setting(x, "Model", ""),
+                    Setting(x, "Endpoint", "https://api.openai.com/v1/chat/completions"),
+                    Setting(x, "Temperature", "0"), Setting(x, "MaxOutputTokens", "512"),
+                    Setting(x, "TimeoutSeconds", "30"))).Distinct().ToArray();
                 if (settings.Length != 1) throw new InvalidOperationException("Real LLM settings differ across architectures.");
+                if (settings[0].Item5 is not string timeout || !int.TryParse(timeout, out var timeoutSeconds) || timeoutSeconds < 1)
+                    throw new ArgumentException("Real mode requires a valid positive LLM timeout.");
+                var expectedRequests = options.EstimatedRequestsPerExecution ?? pilot?.EstimatedRequestsPerExecution;
+                var expectedInput = options.ExpectedInputTokens ?? pilot?.ExpectedInputTokensPerRequest;
+                var expectedOutput = options.ExpectedOutputTokens ?? pilot?.ExpectedOutputTokensPerRequest;
+                var highInput = options.HighInputTokens ?? pilot?.HighInputTokensPerRequest;
+                var highOutput = options.HighOutputTokens ?? pilot?.HighOutputTokensPerRequest;
+                if (expectedRequests is not > 0 || expectedInput is not > 0 || expectedOutput is not > 0 ||
+                    highInput < expectedInput || highOutput < expectedOutput)
+                    throw new ArgumentException("Real mode requires positive request and token estimates, with high estimates at least as large as expected.");
+                var highRequests = pilot?.HighRequestsPerExecution ?? expectedRequests * 2;
+                Console.WriteLine($"Model: {settings[0].Item1}; requests estimated: {plan.Count * expectedRequests}; expected cost USD: {plan.Count * expectedRequests * EstimateUsd(expectedInput, expectedOutput, options.InputUsdPerMillion, options.OutputUsdPerMillion):F6}; high-usage requests: {plan.Count * highRequests}; high-usage cost USD: {plan.Count * highRequests * EstimateUsd(highInput, highOutput, options.InputUsdPerMillion, options.OutputUsdPerMillion):F6}.");
+                Console.WriteLine("Estimates are not guaranteed billing limits; provider-side retries, larger prompts, and incomplete usage may increase costs.");
             }
             Console.WriteLine($"Planned {plan.Count} {options.Mode} executions (seed {options.Seed}).");
             if (options.DryRun) { foreach (var item in plan) Console.WriteLine($"{item.Repetition}: {item.Scenario.Id} / {item.Architecture}"); return 0; }
             var experiment = $"experiment-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfff}-{Guid.NewGuid():N}";
             var directory = Path.Combine(Path.GetFullPath(options.Output), experiment);
             var runs = new List<Run>();
+            if (options.Mode == "real")
+            {
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, "request-count.txt"), "0");
+            }
             var apiSettings = plan.Select(x => x.Architecture).Distinct().ToDictionary(x => x, x => new
             {
-                model = Environment.GetEnvironmentVariable($"{x}__Model") ?? "gpt-4o-mini",
-                endpoint = Environment.GetEnvironmentVariable($"{x}__Endpoint") ?? "https://api.openai.com/v1/chat/completions",
-                temperature = Environment.GetEnvironmentVariable($"{x}__Temperature") ?? "0",
-                maxOutputTokens = Environment.GetEnvironmentVariable($"{x}__MaxOutputTokens") ?? "512",
-                timeoutSeconds = Environment.GetEnvironmentVariable($"{x}__TimeoutSeconds") ?? "30"
+                model = Setting(x, "Model", "gpt-4o-mini"),
+                endpoint = Setting(x, "Endpoint", "https://api.openai.com/v1/chat/completions"),
+                temperature = Setting(x, "Temperature", "0"),
+                maxOutputTokens = Setting(x, "MaxOutputTokens", "512"),
+                timeoutSeconds = Setting(x, "TimeoutSeconds", "30")
+            });
+            var apiBinaryHashes = plan.Select(x => x.Architecture).Distinct().ToDictionary(x => x, x =>
+            {
+                var projectName = $"Kooshi.Benchmark.{x}.Api";
+                var published = Environment.GetEnvironmentVariable("KOOSHI_PUBLISHED_API_ROOT");
+                var binary = string.IsNullOrWhiteSpace(published)
+                    ? Path.Combine(root.FullName, "src", projectName, "bin",
+                        Environment.GetEnvironmentVariable("KOOSHI_API_BIN_DIRECTORY") ?? Path.Combine(Environment.GetEnvironmentVariable("KOOSHI_API_CONFIGURATION") ?? "Debug", "net10.0"), projectName + ".dll")
+                    : Path.Combine(published, projectName, projectName + ".dll");
+                return File.Exists(binary) ? Sha256File(binary) : null;
             });
             var metadata = new { experimentId = experiment, options, plannedRuns = plan.Count, executionMode = options.Mode == "real" ? "real_llm" : "simulated",
                 startedAt = DateTimeOffset.UtcNow, complete = false,
-                apiSettings, scenarioDefinitions = scenarios,
+                apiSettings, apiBinaryHashes, sourceRevision = Environment.GetEnvironmentVariable("KOOSHI_SOURCE_REVISION") ?? Environment.GetEnvironmentVariable("GITHUB_SHA"),
+                pilotProtocol = pilot, pilotProtocolSha256 = pilotHash, variantSha256 = variantHash,
+                scenarioSha256 = Directory.GetFiles(Path.Combine(root.FullName, "scenarios"), "*.json").OrderBy(x => x).ToDictionary(x => Path.GetFileName(x), Sha256File),
+                promptSha256 = new[] { "DirectLlm", "WorkflowAgent", "ProcessBound" }.ToDictionary(x => x, x => Sha256File(Path.Combine(root.FullName, "src", $"Kooshi.Benchmark.{x}.Api", "Llm.cs"))), scenarioDefinitions = scenarios,
                 order = plan.Select((x, i) => new { index = i, x.Architecture, scenarioId = x.Scenario.Id, x.Repetition }).ToArray() };
             Export(directory, metadata, runs);
             using var interruption = new CancellationTokenSource();
@@ -328,13 +546,20 @@ public static class Benchmark
             foreach (var item in plan)
             {
                 if (interruption.IsCancellationRequested) break;
+                if (options.Mode == "real" && runs.Count > 0)
+                {
+                    if (!CanContinueReal(runs, options))
+                    { Console.Error.WriteLine("Real-mode accounting is incomplete or a request/estimated-budget threshold was reached; stopping before another run."); break; }
+                }
                 var result = await Execute(root.FullName, directory, experiment, item, options, interruption.Token);
                 runs.Add(result); Export(directory, metadata, runs);
                 Console.WriteLine($"{runs.Count}/{plan.Count} {item.Architecture} {item.Scenario.Id}: {result.Outcome}");
             }
             Export(directory, new { metadata.experimentId, metadata.options, metadata.plannedRuns, metadata.executionMode,
-                metadata.startedAt, complete = runs.Count == plan.Count, metadata.apiSettings, metadata.scenarioDefinitions, metadata.order }, runs);
-            Console.WriteLine(directory); return runs.Count == plan.Count ? 0 : 2;
+                metadata.startedAt, complete = runs.Count == plan.Count, metadata.apiSettings, metadata.apiBinaryHashes, metadata.sourceRevision,
+                metadata.pilotProtocol, metadata.pilotProtocolSha256, metadata.variantSha256, metadata.scenarioSha256, metadata.promptSha256,
+                metadata.scenarioDefinitions, metadata.order }, runs);
+            Console.WriteLine(directory); return runs.Count == plan.Count && runs.All(x => x.ScenarioSuccess == true) ? 0 : 2;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }

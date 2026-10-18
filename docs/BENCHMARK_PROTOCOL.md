@@ -1,5 +1,7 @@
 # Benchmark protocol — Phase 6
 
+**Phase 8A update:** The original phase-6 latency and outcome descriptions below document the older export. New runs retain `durationMilliseconds` as total experiment time and add separate launch, readiness and scenario durations plus a read-only SQLite booking-row count. See [measurement validity](MEASUREMENT_VALIDITY.md), [readiness](REAL_LLM_READINESS.md), and the [prespecified analysis plan](STATISTICAL_ANALYSIS_PLAN.md). The primary seven scenario texts remain structured and do not yet validate natural-language understanding. Real mode now requires explicit authorization and user-supplied pricing/limits.
+
 ## Research questions
 
 How do direct LLM tool calling, a workflow agent, and process bound governed execution differ in completion, latency, recovery, duplicate effects, and policy outcomes under equivalent booking requests? Numerical differences are descriptive until an inferential analysis is planned and performed.

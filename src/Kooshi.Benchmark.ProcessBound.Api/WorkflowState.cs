@@ -65,10 +65,12 @@ public sealed class ExecutionState
     public double ElapsedMilliseconds => ((CompletedAt ?? DateTimeOffset.UtcNow) - StartedAt).TotalMilliseconds;
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
+    public double? LlmRequestMilliseconds { get; set; }
+    public double? DownstreamOperationMilliseconds { get; set; }
     public Kooshi.Benchmark.Shared.ExecutionMetrics Metrics => Kooshi.Benchmark.Shared.ExecutionMetricRules.Create(
         Architecture, ScenarioId, Id, Status, StartedAt, CompletedAt, Messages.Count(m => m.Role == "user"),
         LlmCalls, InputTokens, OutputTokens, ToolAttempts.Select(t => t.Outcome), BusinessEffects.Count,
-        DuplicateSideEffects, UnauthorizedCommittedExecutions, ConfirmationViolations, Events.Select(e => e.Type), Failures);
+        DuplicateSideEffects, UnauthorizedCommittedExecutions, ConfirmationViolations, Events.Select(e => e.Type), Failures, LlmRequestMilliseconds, DownstreamOperationMilliseconds);
 
 }
 

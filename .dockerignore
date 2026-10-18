@@ -5,6 +5,7 @@
 .dotnet/
 .templateengine/
 results/
+.secrets/
 **/*.db
 **/*.db-shm
 **/*.db-wal

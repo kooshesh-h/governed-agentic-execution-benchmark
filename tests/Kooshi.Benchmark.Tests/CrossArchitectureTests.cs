@@ -60,11 +60,14 @@ public class CrossArchitectureTests
         {
             Assert.Equal(firstStatus, m.FinalStatus);
             Assert.Equal(effects, m.CommittedBusinessEffects);
-            Assert.Equal(2, m.ToolInvocationAttempts);
+            Assert.Equal(m.ArchitectureId == "DirectLlm" ? 1 : 2, m.ToolInvocationAttempts);
             Assert.Equal(1, m.ConversationTurns);
             Assert.Equal(1, m.LlmRequestCount);
             Assert.Null(m.InputTokens);
         });
+        Assert.Single(((Direct.ExecutionState)states[0]).ModelToolCalls);
+        Assert.Equal("create_demo_booking", ((Direct.ExecutionState)states[0]).ModelToolCalls[0].Name);
+        Assert.Equal("create_demo_booking", ((Direct.ExecutionState)states[0]).ToolAttempts[0].Name);
         if (scenario == "transient")
         {
             Assert.Equal("succeeded", (await d.RetryAsync(createdD.Id, default))!.Status);

@@ -28,13 +28,16 @@ public class DirectLlmTests
         var (service, _) = Fixture();
         var created = await service.CreateAsync(new("demo-booking", CompleteInput), default);
         Assert.Equal("ready", created.Status);
+        Assert.Contains(created.ModelToolCalls, x => x.Name == "create_demo_booking");
+        Assert.Empty(created.ToolAttempts);
+        Assert.Empty(created.BusinessEffects);
         var booked = (await service.ConfirmAsync(created.Id, default))!;
         Assert.Equal("succeeded", booked.Status);
         Assert.Single(booked.BusinessEffects);
-        Assert.Equal(2, booked.ToolAttempts.Count);
+        Assert.Single(booked.ToolAttempts);
         var duplicate = (await service.ConfirmAsync(created.Id, default))!;
         Assert.Single(duplicate.BusinessEffects);
-        Assert.Equal(2, duplicate.ToolAttempts.Count);
+        Assert.Single(duplicate.ToolAttempts);
     }
 
     [Fact]
@@ -71,7 +74,7 @@ public class DirectLlmTests
         Assert.Empty(failed.BusinessEffects);
         var retried = (await service.RetryAsync(created.Id, default))!;
         Assert.Equal("failed", retried.Status);
-        Assert.Equal(3, retried.ToolAttempts.Count);
+        Assert.Equal(2, retried.ToolAttempts.Count);
         Assert.Contains(retried.Events, e => e.Type == "recovery_attempt");
     }
 
@@ -85,6 +88,52 @@ public class DirectLlmTests
         var result = await executor.ExecuteAsync(state, "delete_all_bookings", "{}", default);
         Assert.Equal("unauthorized", result.Outcome);
         Assert.Empty(state.BusinessEffects);
+    }
+
+    [Fact]
+    public async Task ModelSelectedBookingIsValidatedAndHeldForConfirmation()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kooshi-test-{Guid.NewGuid()}.db");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DirectLlm:DatabasePath"] = path }).Build();
+        var store = new ExecutionStore(config);
+        var arguments = System.Text.Json.JsonSerializer.Serialize(new Booking
+        {
+            CustomerName = "Ada Lovelace", Email = "ada@example.org", Product = "Analytics",
+            PreferredDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(14)), TimeZone = "UTC"
+        });
+        var llm = new FixedLlm(new("Proposed", "create_demo_booking", arguments, 11, 7));
+        var service = new ExecutionService(store, llm, new SyntheticBookingToolExecutor(store, config), NullLogger<ExecutionService>.Instance);
+        var created = await service.CreateAsync(new("demo-booking", "Please book a demo"), default);
+        Assert.Equal("ready", created.Status);
+        Assert.Single(created.ModelToolCalls);
+        Assert.Empty(created.BusinessEffects);
+        Assert.Empty(created.ToolAttempts);
+        Assert.Equal(11, created.InputTokens);
+        Assert.Equal(7, created.OutputTokens);
+        var confirmed = (await service.ConfirmAsync(created.Id, default))!;
+        Assert.Equal("succeeded", confirmed.Status);
+        Assert.Single(confirmed.BusinessEffects);
+        Assert.Single(confirmed.ToolAttempts);
+    }
+
+    [Fact]
+    public async Task ModelCannotCommitUnapprovedOrInvalidOperation()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kooshi-test-{Guid.NewGuid()}.db");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DirectLlm:DatabasePath"] = path }).Build();
+        var store = new ExecutionStore(config);
+        var service = new ExecutionService(store, new FixedLlm(new("Bad proposal", "delete_all_bookings", "{}")),
+            new SyntheticBookingToolExecutor(store, config), NullLogger<ExecutionService>.Instance);
+        var created = await service.CreateAsync(new("demo-booking", CompleteInput), default);
+        Assert.NotEqual("ready", created.Status);
+        Assert.Empty(created.BusinessEffects);
+        var afterConfirm = (await service.ConfirmAsync(created.Id, default))!;
+        Assert.Empty(afterConfirm.BusinessEffects);
+    }
+
+    private sealed class FixedLlm(LlmDecision decision) : ILlmClient
+    {
+        public Task<LlmDecision> InterpretAsync(ExecutionState state, CancellationToken ct) => Task.FromResult(decision);
     }
 
     [Fact]

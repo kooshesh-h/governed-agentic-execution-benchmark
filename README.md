@@ -1,88 +1,170 @@
 # Kooshi Architecture Benchmark
 
-Independent .NET 10 research prototype accompanying the revised Information Systems paper. It contains no proprietary Kooshi production code. Local generated benchmark results are excluded from version control.
+Standalone .NET 10 research prototype accompanying **From Human Intent to Governed Process Execution: A Process-Bound Architecture for Agentic Information Systems**, prepared for *Information Systems*. It compares three architectures on synthetic demo-booking operations. It is separate from the private commercial Kooshi platform and contains no proprietary production implementation. Architectural differences are hypotheses to test; the code alone does not establish that any architecture is superior. No license has yet been selected.
 
-For Docker build, API testing, isolated benchmark execution, and result interpretation, see [Reproducibility](docs/REPRODUCIBILITY.md). The [benchmark protocol](docs/BENCHMARK_PROTOCOL.md), [fairness and limitations](docs/BENCHMARK_FAIRNESS.md), and [draft artifact statement](docs/ARTIFACT_AVAILABILITY.md) describe the scientific scope. The repository is being prepared for public release; it is not presented here as already public. No license has yet been selected.
-
-## Projects
-
-| Project | Purpose |
+| Architecture | Execution control |
 | --- | --- |
-| `src/Kooshi.Benchmark.DirectLlm.Api` | Direct LLM demo booking API (Phase 2) |
-| `src/Kooshi.Benchmark.WorkflowAgent.Api` | Workflow agent demo booking API (Phase 3) |
-| `src/Kooshi.Benchmark.ProcessBound.Api` | Process bound governed booking API (Phase 4) |
-| `src/Kooshi.Benchmark.Shared` | Canonical booking, synthetic downstream, LLM transport, and metrics contracts |
-| `src/Kooshi.Benchmark.Runner` | Isolated benchmark runner with JSON/CSV exports |
-| `tests/Kooshi.Benchmark.Tests` | xUnit tests |
+| Direct LLM Tool Calling (`DirectLlm`) | The model proposes booking fields through a tool call; API validation and separate confirmation precede the synthetic booking adapter. |
+| Workflow-Based Agent (`WorkflowAgent`) | A persisted stage machine controls collection, validation, confirmation, and retry; the model interprets user input. |
+| Process-Bound Governed Execution (`ProcessBound`) | A process registry creates a per-execution intent contract; the service and tool adapter enforce its field, confirmation, and tool policies. |
 
-Each API references Shared. Runner and Tests reference Shared. The APIs have no references to each other.
+All three share a booking schema and synthetic downstream adapter. Their prompts and orchestration differ; see the [fairness rules](docs/BENCHMARK_FAIRNESS.md).
 
-## Local endpoints
+## Execution Modes
 
-| API | HTTP port |
-| --- | ---: |
-| DirectLlm | 5101 |
-| WorkflowAgent | 5102 |
-| ProcessBound | 5103 |
+| Feature | Simulated mode | Real LLM mode |
+| --- | --- | --- |
+| OpenAI API key required | No | Yes, supplied by the researcher |
+| Provider charges | None | Possible |
+| Docker support | Yes | Yes, with the real-mode Compose override |
+| Automated tests | Yes | Yes, with provider calls isolated or mocked |
+| Research reproduction | Deterministic infrastructure validation | Provider-dependent experimental reproduction |
+| Measures real LLM behavior | No | Yes |
 
-Run an API with `dotnet run --project src/Kooshi.Benchmark.DirectLlm.Api` (substitute the project name for the other architectures). Each exposes `GET /health` and the same reserved execution routes:
+Simulated mode checks scenario loading, business rules, fault injection, persistence, and the evaluation/export pipeline. Its deterministic field parser does **not** measure LLM accuracy, reliability, latency, or cost. **The authors' private API key is not included in this repository. Researchers must provide their own key to run real LLM experiments.**
 
-- `POST /api/executions`
-- `GET /api/executions/{id}`
-- `POST /api/executions/{id}/messages`
-- `POST /api/executions/{id}/confirm`
-- `POST /api/executions/{id}/cancel`
-- `POST /api/executions/{id}/retry`
+## Quick Start: no API key required
 
-All three APIs implement the shared routes for `demo-booking`. Planned scenarios are listed in `scenarios/README.md`.
+Prerequisites: Git, Docker Engine/Desktop with Linux containers and Compose v2. These commands work in PowerShell, macOS Terminal, and a Linux shell. Run them from the directory containing `Kooshi.ArchitectureBenchmark.slnx`. Replace the clone URL with the repository URL from your access or publication record; the repository may not yet be public.
 
-## Process bound governed execution
+```sh
+git clone <REPOSITORY-URL>
+cd Kooshi.ArchitectureBenchmark
+docker compose --profile benchmark build
+docker compose up -d direct workflow process
+docker compose ps
+docker compose --profile benchmark run --rm --no-deps benchmark --mode simulated --dry-run --repetitions 1 --seed 42
+docker compose --profile benchmark run --rm --no-deps benchmark --mode simulated --repetitions 1 --seed 42 --restart --output results
+```
 
-Run `dotnet run --project src/Kooshi.Benchmark.ProcessBound.Api` on port 5103. `processes.json` is the declarative registry; set `ProcessBound__RegistryPath` to load another registry. The `demo-booking` definition specifies the same five required fields and validation as the baseline APIs, version 1.0, a confirmation requirement, the `create_demo_booking` tool allowlist, a synthetic booking side effect, and a three retry limit. The registry resolves a requested `scenarioId`; an unknown ID yields a persisted failed execution and no executable contract.
+The API health endpoints are `http://localhost:5101/health`, `:5102/health`, and `:5103/health`; each should report `healthy` and `simulated`. A successful one-repetition command exits 0 and prints its `results/experiment-*` directory. In that directory, `metadata.json` should show `executionMode: simulated`, `complete: true`, and `plannedRuns: 21`; `runs.json` should contain 21 records with `scenarioSuccess: true`. Check `failures.json` for failures. Generated results are Git ignored. Stop manual services with `docker compose down`. The benchmark container starts its own isolated API processes; the manual services are useful for health inspection.
 
-The intent execution contract (IEC) is constructed from the resolved process and stored with the execution. `P` is process ID and version; `A` is the collected argument map; `Pre` is the required validation/precondition set; `Auth` is the authorization policy; `Conf` requires confirmation; `T` is the tool allowlist; `S` classifies the business effect; `Rec` specifies retry limit and reconciliation policy; `Prov` links the contract to an execution ID and construction time. The service enforces field validity and the tool allowlist before executing. Confirmation stores a SHA-256 fingerprint of the booking arguments; changing those arguments invalidates it. The tool adapter independently checks stage, confirmation fingerprint, validation, and allowlist before committing.
+For offline automated tests, install the .NET 10 SDK and run:
 
-Create with `POST /api/executions` and `{ "scenarioId": "demo-booking", "input": "customerName: Ada Lovelace, email: ada@example.org, product: Analytics, preferredDate: 2026-11-01, timeZone: UTC" }` (replace the date with a future date). A ready response has `status: "ready"`, `fields`, `missingFields`, `invalidFields`, `validationErrors`, `contract`, and an empty `businessEffects` array. Send corrections to `POST /api/executions/{id}/messages` as `{ "message": "email: ada@example.org" }`, then call `POST /api/executions/{id}/confirm`. A successful response has `status: "succeeded"`, one `businessEffects` entry and an audit trail in `events`. `GET /api/executions/{id}` retrieves the persisted state; `cancel` and `retry` use the same route patterns as the other APIs.
+```sh
+dotnet restore Kooshi.ArchitectureBenchmark.slnx
+dotnet build Kooshi.ArchitectureBenchmark.slnx --no-restore -c Release
+dotnet test Kooshi.ArchitectureBenchmark.slnx --no-build --no-restore -c Release
+```
 
-Simulated interpretation is the default and deterministically parses comma separated field pairs. Set `ProcessBound__Mode=real`, `ProcessBound__Model`, optional `ProcessBound__Endpoint`, `ProcessBound__Temperature`, `ProcessBound__MaxOutputTokens`, and `ProcessBound__ApiKey` or `OPENAI_API_KEY` for an OpenAI-compatible chat completions service. Keep credentials in environment variables or user secrets. `ProcessBound__DatabasePath` selects SQLite storage; its default is `processbound.db`. `ProcessBound__SimulateDownstreamFailure=true` injects the same synthetic downstream failure as the baseline APIs.
+No `.env`, `.secrets` directory, placeholder key, or provider account is needed. For a local runner after the Release build, set `KOOSHI_API_CONFIGURATION=Release` (PowerShell: `$env:KOOSHI_API_CONFIGURATION='Release'`; Bash: `export KOOSHI_API_CONFIGURATION=Release`), then run `dotnet run --project src/Kooshi.Benchmark.Runner -c Release --no-build -- --mode simulated --smoke --seed 42 --restart --output results`.
 
-Execution JSON, messages, decisions, attempts and audit events persist in SQLite. An optional `Idempotency-Key` header on create returns the original execution for an identical repeated request; reusing a key with different input returns HTTP 409. Booking commits have a unique execution ID constraint, so repeat confirm calls do not create a second synthetic booking. An interrupted `Executing` state is reconciled against the bookings table when retrieved. Attempts and committed effects are reported separately. The in-process semaphore protects concurrent calls in one API process; multiple API instances sharing a database are not coordinated. State and booking records are not committed in one transaction, and an external downstream service would need its own idempotency and reconciliation guarantees. Unknown downstream outcomes cannot be claimed as exactly once. The current extractor and booking adapter are still booking specific, so adding another process requires a matching interpreter and tool implementation. Registry policy snapshots are persisted but the registry is not yet signed or version pinned across deployment changes.
+## Running with Your Own OpenAI API Key
 
-DirectLlm delegates field extraction to the LLM and validates before its booking adapter. WorkflowAgent adds explicit transition stages. ProcessBound additionally instantiates a registry derived IEC and checks its tool and confirmation policy at the execution boundary. All three already provide validation, confirmation, persistence and retry safeguards. No performance or security comparison is implied by this implementation. Phase 5 consolidation and its remaining limitations are documented in `docs/BENCHMARK_FAIRNESS.md`. Use identical model settings and fault injection when the future runner evaluates architectures; simulated mode is only for deterministic development and tests.
+Obtain a key from your chosen OpenAI-compatible provider and verify that its model supports chat completions, tool calls, `tool_choice`, `max_completion_tokens`, and token usage fields. For OpenAI, create and manage keys in the [API platform](https://platform.openai.com/api-keys). Confirm provider access and pricing independently. Record the exact model identifier and input/output prices.
 
-## Workflow agent demo booking
+For Docker, create `.secrets/openai_api_key` locally. The file should contain only the key, without quotes. These examples accept input without displaying it:
 
-Run with `dotnet run --project src/Kooshi.Benchmark.WorkflowAgent.Api --urls http://localhost:5102`. The API uses the same request format and booking fields as DirectLlm. Its persisted state machine follows `Created → Interpreting → Validating → Collecting` for missing data, or `Validating → AwaitingConfirmation → Executing → Succeeded` for a complete booking. Interpretation or execution errors enter `Failed`; confirmed downstream failures can be retried up to `WorkflowAgent:RetryLimit` (default 3). Uncommitted executions can be cancelled. Invalid actions leave the state unchanged; impossible internal transitions throw.
+```powershell
+New-Item -ItemType Directory -Force .secrets | Out-Null
+$key = Read-Host 'Your API key' -MaskInput
+[System.IO.File]::WriteAllText((Join-Path (Get-Location) '.secrets/openai_api_key'), $key)
+Remove-Variable key
+```
 
-The workflow controls validation, confirmation and tool execution. The model only extracts user supplied booking details. Simulated mode accepts comma separated field pairs for local development. Real mode uses an OpenAI compatible chat completions endpoint with `WorkflowAgent__Mode=real`, `WorkflowAgent__Model`, optional `WorkflowAgent__Endpoint`, `WorkflowAgent__Temperature`, `WorkflowAgent__MaxOutputTokens`, and `WorkflowAgent__ApiKey` or `OPENAI_API_KEY`. `WorkflowAgent__DatabasePath` selects SQLite storage, and `WorkflowAgent__SimulateDownstreamFailure=true` injects a booking failure. This preserves the same model options and downstream failure switch as DirectLlm. Never use simulated mode to report LLM benchmark performance.
+```sh
+mkdir -p .secrets
+chmod 700 .secrets
+read -rs -p 'Your API key: ' key; printf '\n'
+printf '%s' "$key" > .secrets/openai_api_key
+unset key
+chmod 600 .secrets/openai_api_key
+```
 
-Unlike DirectLlm, the workflow has named persisted stages and an allowlist of transitions. A request saved in `Executing` is reconciled on retrieval: a committed booking becomes `Succeeded`; otherwise it becomes `Failed` for an explicit retry. Booking commits are idempotent by execution ID. Concurrent operations are serialized within one process. Multi instance locking remains a limitation. The booking schema, validation, downstream behavior, and LLM transport are shared.
+`docker-compose.real.yml` mounts the file as `/run/secrets/openai_api_key` in the benchmark container and sets `OPENAI_API_KEY_FILE=/run/secrets/openai_api_key`. The runner checks that it exists and contains a value. Child .NET APIs inherit the variable and read the file through `LlmSettings`. The ordinary Compose file has no secret dependency. Select the override only for real mode:
 
-## Direct LLM demo booking
+```sh
+docker compose -f docker-compose.yml -f docker-compose.real.yml --profile benchmark config --quiet
+docker compose -f docker-compose.yml -f docker-compose.real.yml --profile benchmark build benchmark
+```
 
-The canonical booking fields are `customerName`, `email`, `product`, `preferredDate` (`YYYY-MM-DD`, today or later), and `timeZone` (recognized system time zone ID). This schema is defined in Shared. The synthetic booking adapter accepts one booking per execution ID and commits it to SQLite with a distinct booking ID. The response contains `toolAttempts` and `businessEffects` separately; only the latter records committed bookings.
+Compose secrets mount the file; they do **not** encrypt it at rest. `.secrets/` is Git ignored and excluded from Docker build context, so the key is neither committed nor embedded in images. Never pass it through Docker build arguments, tracked settings, command-line flags, logs, or exported results. Protect and rotate your credentials. Outside Docker, the APIs and runner also support `OPENAI_API_KEY` or architecture-specific `DirectLlm__ApiKey`, `WorkflowAgent__ApiKey`, and `ProcessBound__ApiKey` environment variables; `OPENAI_API_KEY_FILE` works there too. Do not put credentials in tracked `appsettings.json`.
 
-`POST /api/executions` accepts `{ "scenarioId": "demo-booking", "input": "..." }`. The response includes the execution ID and status. `POST /api/executions/{id}/messages` accepts `{ "message": "..." }` for corrections. `GET /api/executions/{id}` retrieves persisted state. `POST /api/executions/{id}/confirm` commits a ready request, `cancel` stops an uncommitted request, and `retry` repeats a failed confirmed booking. These action endpoints take no body. Status values are `collecting`, `ready`, `failed`, `succeeded`, and `cancelled`.
+### Configure and inspect without paid calls
 
-Run locally with `dotnet run --project src/Kooshi.Benchmark.DirectLlm.Api --urls http://localhost:5101`. Simulated mode is the default and parses comma-separated `field: value` pairs deterministically. It is for development and tests only; its behavior must never be reported as LLM benchmark performance. For example, create an execution with `customerName: Ada Lovelace, email: ada@example.org, product: Analytics, preferredDate: 2026-11-01, timeZone: UTC`, then call `confirm` using the returned ID. Use a future date when running this example later.
+For the frozen pilot, use `pilot/phase-8b-v1.json`. Set `LLM_MODEL` to the exact provider model. Optional `LLM_ENDPOINT`, `LLM_TEMPERATURE`, `LLM_MAX_OUTPUT_TOKENS`, and `LLM_TIMEOUT_SECONDS` apply equally to all architectures. Compose defaults to OpenAI's chat completions endpoint, `gpt-4o-mini`, temperature 0, 512 output tokens, and 30 seconds; confirm compatibility and deliberately select a model. This example uses PowerShell:
 
-To use a real OpenAI-compatible chat completions endpoint, set `DirectLlm__Mode=real`, `DirectLlm__Model`, and optionally `DirectLlm__Endpoint`, `DirectLlm__Temperature`, and `DirectLlm__MaxOutputTokens`. Set `OPENAI_API_KEY` or `DirectLlm__ApiKey` via the environment or user secrets. Do not put credentials in appsettings. The client sends a native `update_booking` function definition and reads tool calls and token usage from the response. The API performs booking only after the separate confirm call. `DirectLlm__DatabasePath` selects the SQLite file. `DirectLlm__SimulateDownstreamFailure=true` injects a controlled booking failure for local testing.
+```powershell
+$env:LLM_MODEL = Read-Host 'Exact model identifier'
+$inputPrice = Read-Host 'Input USD per million tokens'
+$outputPrice = Read-Host 'Output USD per million tokens'
+$budgetUsd = Read-Host 'Estimated budget threshold in USD'
+$common = @('--mode','real','--smoke','--seed','42','--pilot-config','pilot/phase-8b-v1.json','--restart','--output','results/pilot-8b','--max-llm-requests','84','--max-estimated-usd',"$budgetUsd",'--input-usd-per-million',"$inputPrice",'--output-usd-per-million',"$outputPrice")
+docker compose -f docker-compose.yml -f docker-compose.real.yml --profile benchmark run --rm --no-deps -e LLM_MODEL="$env:LLM_MODEL" benchmark @common --dry-run
+```
 
-The synthetic downstream service and canonical schema are in Shared. The current simulator is deliberately small: it recognizes field pairs and does not imitate model reasoning. A real provider may differ in its supported chat completions options. The API does not currently support distributed multi-instance locking or transactional persistence of both execution state and booking effects.
+For Bash, export `LLM_MODEL` so Compose applies it to all three architectures, and set `INPUT_PRICE`, `OUTPUT_PRICE`, and `BUDGET_USD` in your shell, then run:
 
-Build with `dotnet build Kooshi.ArchitectureBenchmark.slnx`.
+```sh
+docker compose -f docker-compose.yml -f docker-compose.real.yml --profile benchmark run --rm --no-deps -e LLM_MODEL="$LLM_MODEL" benchmark --mode real --smoke --seed 42 --pilot-config pilot/phase-8b-v1.json --restart --output results/pilot-8b --max-llm-requests 84 --max-estimated-usd "$BUDGET_USD" --input-usd-per-million "$INPUT_PRICE" --output-usd-per-million "$OUTPUT_PRICE" --dry-run
+```
 
-## Phase 5 configuration and verification
+`--dry-run` validates the plan, model, key presence, prices, thresholds, and timeout; it prints expected and high-usage cost estimates and makes no provider requests. Prices are **researcher supplied**, in USD per million tokens; consult current provider pricing. Pilot planning assumes two requests per execution at 750 input and 150 output tokens, with a high-use estimate of four at 2,500 and 512. These are assumptions, not measured use or guaranteed billing caps.
 
-The common downstream fault setting is `SyntheticBooking__Scenario`: `success` (default), `invalid`, `transient`, `permanent`, `timeout`, `delayed`, or `uncertain`. `SyntheticBooking__DelayMilliseconds` controls the delayed scenario (default 100 ms, clamped to 0–60000 ms). The older per-API `*__SimulateDownstreamFailure=true` setting maps to permanent failure. `transient` fails the first attempt for an execution; `uncertain` commits and reports a lost response. Use a separate SQLite database per API instance. For repeatable tests, create a new service instance and database. The booking store enforces one booking per execution ID.
+### Explicit paid execution
 
-Every API accepts its architecture prefix followed by `Mode`, `Model`, `Endpoint`, `ApiKey`, `Temperature`, `MaxOutputTokens`, `TimeoutSeconds`, and `DatabasePath` (for example, `DirectLlm__TimeoutSeconds=45`). The default mode is simulated. The real mode requires an API key from the prefixed environment variable or `OPENAI_API_KEY`. Do not put secrets in tracked JSON files. The default timeout is 30 seconds, default model is `gpt-4o-mini`, default temperature is 0, and default maximum output is 512 tokens. Use the same settings across architectures for comparative experiments.
+Real requests require `--mode real`, `KOOSHI_REAL_LLM_AUTHORIZED=yes`, a credential, model, positive `--max-llm-requests` and `--max-estimated-usd`, and nonnegative token prices. Review the dry run, budget, and provider account spending controls. Start with one successful-booking compatibility run; inspect it before deciding whether to run all 21 pilot executions. In PowerShell, with `$common` defined above:
 
-Run `dotnet restore Kooshi.ArchitectureBenchmark.slnx`, `dotnet build Kooshi.ArchitectureBenchmark.slnx`, and `dotnet test Kooshi.ArchitectureBenchmark.slnx`. The package audit command is `dotnet list Kooshi.ArchitectureBenchmark.slnx package --vulnerable --include-transitive`. All APIs pin `Microsoft.Data.Sqlite` 10.0.0 and `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12, resolving `SQLitePCLRaw.lib.e_sqlite3` 2.1.12. Phase 5 does not include benchmark execution or Docker support.
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.real.yml --profile benchmark run --rm --no-deps -e LLM_MODEL="$env:LLM_MODEL" -e KOOSHI_REAL_LLM_AUTHORIZED=yes benchmark @common --scenario successful-booking --architecture DirectLlm
+```
 
+For Bash, append `-e KOOSHI_REAL_LLM_AUTHORIZED=yes` before `benchmark` in the preceding dry-run command, remove `--dry-run`, and append `--scenario successful-booking --architecture DirectLlm`. For the full pilot, omit the two filters after separately deciding to proceed. The runner checks request count before every provider request. It checks estimated budget **between** benchmark runs, so one run can pass the threshold. Provider charges may differ from estimates. Press Ctrl+C to cancel. Completed runs are exported immediately, including per-run `estimatedProviderCostUsd` when usage is available. Preserve partial experiment directories and inspect `request-count.txt`, `metadata.json`, `runs.json`, and `summary.json` before another run. Missing usage yields an unavailable cost estimate.
 
-## Phase 6 runner
+## Scenarios and pilot
 
-Build first with `dotnet restore Kooshi.ArchitectureBenchmark.slnx` and `dotnet build Kooshi.ArchitectureBenchmark.slnx`. The runner starts each API on a temporary localhost port with a fresh SQLite database. Run `dotnet run --no-build --project src/Kooshi.Benchmark.Runner -- --dry-run` to validate scenario definitions and view the seeded 630-run plan without business effects. For a small simulated smoke test, run `dotnet run --no-build --project src/Kooshi.Benchmark.Runner -- --smoke --output results`. Use `--scenario successful-booking`, `--architecture DirectLlm`, `--repetitions 30`, and `--seed 42` as needed. The default mode is `simulated`; `--mode real` requires explicit selection and provider credentials. Configure equivalent model and inference settings for all three APIs.
+Each JSON file in `scenarios/` defines inputs, actions, faults, invariants, and completion criteria. The runner applies it to each architecture and checks API state against persisted SQLite evidence.
 
-Each experiment gets a unique `results/experiment-*` directory containing `metadata.json`, `runs.json`, `runs.csv`, `summary.json`, `summary.csv`, `failures.json`, and isolated SQLite files. The protocol, metric interpretation, and limitations are in [docs/BENCHMARK_PROTOCOL.md](docs/BENCHMARK_PROTOCOL.md). Simulated output is not real LLM performance. The default reconnection test uses a second HTTP request; add `--restart --scenario reconnection` to terminate and relaunch each API against the same SQLite database before continuing. Use `--direct-url`, `--workflow-url`, and `--process-url` to select localhost HTTP origins for runner-managed processes. The unauthorized condition tests a disallowed process request because no arbitrary tool invocation endpoint exists.
+| Scenario | Expected observable outcome |
+| --- | --- |
+| Successful booking | Confirmation commits one synthetic booking. |
+| Invalid fields | Invalid email is corrected before confirmation; one booking commits. |
+| Cancellation | Cancellation precedes confirmation; no booking commits. |
+| Transient retry | First downstream attempt fails; retry succeeds with one booking. |
+| Duplicate replay | Repeated confirmation does not create a duplicate booking. |
+| Reconnection | Existing execution is retrieved and continued, optionally after API restart. |
+| Unauthorized operation | A disallowed process request is rejected without a booking. This does not establish broad adversarial tool-call security. |
+
+The separate [natural-language variants](scenarios/variants/natural-language-v1.json) replace initial and follow-up text in the Phase 8B pilot while retaining original actions, faults, and criteria. The same variant is applied across architectures; see the [variant explanation](scenarios/NATURAL_LANGUAGE_VARIANTS.md).
+
+The frozen [Phase 8B configuration](pilot/phase-8b-v1.json) specifies three architectures, seven scenarios, one repetition, seed 42, and **21 planned executions**. Its dry run prints the seeded order. The runner records source revision (if `KOOSHI_SOURCE_REVISION` or `GITHUB_SHA` is supplied), binary hashes, scenario/pilot/variant hashes, prompt source hashes, model settings, and execution order. The pilot checks provider compatibility and estimates resources. One repetition cannot support confirmatory statistical conclusions. The [pilot runbook](docs/REAL_LLM_PILOT_RUNBOOK.md) gives the local .NET procedure.
+
+The planned confirmatory design is **3 architectures × 7 scenarios × 30 repetitions = 630 executions**. This is a design, not a claim that 630 real LLM runs have occurred. Preview the simulated plan with `dotnet run --project src/Kooshi.Benchmark.Runner -c Release --no-build -- --mode simulated --dry-run --repetitions 30 --seed 42` after building. Interpret real results under the [protocol](docs/BENCHMARK_PROTOCOL.md) and [statistical plan](docs/STATISTICAL_ANALYSIS_PLAN.md).
+
+## Results and measurement
+
+Each run creates an isolated `results/.../experiment-*` directory containing `metadata.json` (configuration, hashes, plan, completion state), `runs.json` and `runs.csv` (per-run records), `summary.json` and `summary.csv` (descriptive aggregates), `failures.json`, and one SQLite `.db` per execution. Real experiments also have `request-count.txt`. Results may contain provider responses and should be handled as research data.
+
+Per-run fields include `outcome`, `scenarioSuccess`, final status, committed and duplicate effects, tool attempts, LLM requests, input/output tokens, process startup latency, application readiness latency, scenario execution latency, accumulated LLM request latency, downstream operation latency, and estimated provider cost. DirectLlm exposes a separate `toolProposals` counter; it can be unavailable for other architectures. Missing provider usage yields null token and cost values, not zero. Scenario success uses independent persisted state and booking rows, not only API responses. Startup and readiness are separate from user-facing scenario execution latency. See [measurement validity](docs/MEASUREMENT_VALIDITY.md).
+
+## Reproducibility and CI
+
+The repository exposes source, scenario definitions, architecture configuration, simulated experiments, procedure, scoring, and exports. Real LLM outputs may vary with model updates, nondeterminism, API behavior, network conditions, provider latency, and pricing changes. Record provider/model version, settings, source revision, working-tree state, and experiment metadata. Identical real outputs are not guaranteed.
+
+Ordinary [GitHub Actions CI](.github/workflows/research-benchmark-ci.yml) restores/builds .NET, runs offline xUnit tests, builds Docker images, checks readiness, executes 21 simulated scenarios, verifies artifacts, and uploads results and diagnostics. It provides no API key and must not make paid requests. Inspect a specific workflow run before claiming it succeeded.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `docker` missing | Install/start Docker Engine or Desktop with Linux containers and Compose v2; use the .NET local path if needed. |
+| Missing key or secret file | Simulated mode needs neither. For real Docker mode, create `.secrets/openai_api_key` and select both Compose files. Check path and nonempty content without printing the key. |
+| Invalid credentials | Verify provider account, key scope, endpoint, and model. Do not paste the key into issue reports. |
+| Health checks fail or ports conflict | Inspect `docker compose ps` and `docker compose logs direct workflow process`; free ports 5101–5103 or use the runner alone. |
+| SQLite lock | Stop other processes using the database; allow the runner to allocate fresh per-run databases. |
+| Provider timeout | Check network/endpoint and `LLM_TIMEOUT_SECONDS`; preserve partial results before retrying. |
+| Request or budget threshold | Inspect `request-count.txt` and run exports; start a newly authorized experiment with deliberate limits. |
+| Test-host loopback restriction | Run on a host permitting local TCP loopback; the runner starts child APIs on localhost. |
+| Windows DLL lock during build | Stop running API/test processes, then rebuild. |
+
+## Documentation index
+
+- [Fairness rules](docs/BENCHMARK_FAIRNESS.md)
+- [Experimental protocol](docs/BENCHMARK_PROTOCOL.md)
+- [Reproducibility guide](docs/REPRODUCIBILITY.md)
+- [Artifact availability statement](docs/ARTIFACT_AVAILABILITY.md)
+- [Real LLM readiness](docs/REAL_LLM_READINESS.md)
+- [Real LLM experiment plan](docs/REAL_LLM_EXPERIMENT_PLAN.md)
+- [Phase 8B pilot runbook](docs/REAL_LLM_PILOT_RUNBOOK.md)
+- [Measurement validity](docs/MEASUREMENT_VALIDITY.md)
+- [Statistical analysis plan](docs/STATISTICAL_ANALYSIS_PLAN.md)

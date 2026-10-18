@@ -1,0 +1,145 @@
+using System.Net;
+using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using Kooshi.Benchmark.Shared;
+using Direct = Kooshi.Benchmark.DirectLlm.Api;
+using Workflow = Kooshi.Benchmark.WorkflowAgent.Api;
+using Process = Kooshi.Benchmark.ProcessBound.Api;
+
+namespace Kooshi.Benchmark.Tests;
+
+public class RealModeTransportTests
+{
+    private const string Response = """{"choices":[{"message":{"content":"Review this booking","tool_calls":[{"function":{"name":"create_demo_booking","arguments":"{\"customerName\":\"Ada Lovelace\",\"email\":\"ada@example.org\",\"product\":\"Analytics\",\"preferredDate\":\"2030-11-01\",\"timeZone\":\"UTC\"}"}}]}}],"usage":{"prompt_tokens":31,"completion_tokens":17}}""";
+
+    [Fact]
+    public void RealSettingsRequireExplicitModelAndCredential()
+    {
+        Assert.Throws<InvalidOperationException>(() => Kooshi.Benchmark.Shared.LlmSettings.Read(
+            key => key.EndsWith(":ApiKey") ? "fixture-key" : null, "DirectLlm"));
+    }
+
+    [Fact]
+    public async Task DirectRealClientSendsUserTextAndReceivesModelSelectedBusinessTool()
+    {
+        var handler = new RecordingHandler(Response);
+        var client = new Direct.OpenAiCompatibleLlmClient(new HttpClient(handler), Config("DirectLlm"));
+        var state = new Direct.ExecutionState();
+        state.Messages.Add(new("user", "Please book an Analytics demo for Ada", DateTimeOffset.UtcNow));
+        var decision = await client.InterpretAsync(state, default);
+        Assert.Equal("create_demo_booking", decision.ToolName);
+        Assert.Contains("Ada Lovelace", decision.Arguments);
+        Assert.Equal(31, decision.InputTokens);
+        Assert.Equal(17, decision.OutputTokens);
+        Assert.Contains("Please book an Analytics demo", handler.RequestBody);
+        Assert.Contains("create_demo_booking", handler.RequestBody);
+        Assert.Equal("Bearer fixture-key", handler.Authorization);
+    }
+
+    [Fact]
+    public async Task WorkflowAndProcessRealClientsUseProviderGeneratedArguments()
+    {
+        const string extraction = """{"choices":[{"message":{"content":"Updated","tool_calls":[{"function":{"name":"update_booking","arguments":"{\"email\":\"ada@example.org\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":5}}""";
+        var workflowHandler = new RecordingHandler(extraction);
+        var workflowState = new Workflow.ExecutionState();
+        workflowState.Messages.Add(new("user", "Her email is ada@example.org", DateTimeOffset.UtcNow));
+        var workflow = await new Workflow.OpenAiCompatibleLlmClient(new HttpClient(workflowHandler), Config("WorkflowAgent"))
+            .InterpretAsync(workflowState, default);
+        Assert.Equal("update_booking", workflow.ToolName);
+        Assert.Contains("ada@example.org", workflow.Arguments);
+        Assert.Contains("Her email is", workflowHandler.RequestBody);
+
+        var processHandler = new RecordingHandler(extraction);
+        var processState = new Process.ExecutionState();
+        processState.Messages.Add(new("user", "Her email is ada@example.org", DateTimeOffset.UtcNow));
+        var process = await new Process.OpenAiCompatibleLlmClient(new HttpClient(processHandler), Config("ProcessBound"))
+            .InterpretAsync(processState, default);
+        Assert.Equal("update_booking", process.ToolName);
+        Assert.Contains("ada@example.org", process.Arguments);
+        Assert.Contains("Her email is", processHandler.RequestBody);
+    }
+
+    [Fact]
+    public async Task ProviderFailureDoesNotReturnSimulatedArguments()
+    {
+        var handler = new RecordingHandler("{}", HttpStatusCode.BadGateway);
+        var state = new Direct.ExecutionState();
+        state.Messages.Add(new("user", "email: ada@example.org", DateTimeOffset.UtcNow));
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            new Direct.OpenAiCompatibleLlmClient(new HttpClient(handler), Config("DirectLlm")).InterpretAsync(state, default));
+    }
+
+    [Fact]
+    public async Task MockedRealProviderDrivesAllThreeServicesWithoutCommittingBeforeConfirmation()
+    {
+        var fields = JsonSerializer.Serialize(new { customerName = "Ada Lovelace", email = "ada@example.org",
+            product = "Analytics", preferredDate = "2030-11-01", timeZone = "UTC" });
+        static string Fixture(string tool, string args) => JsonSerializer.Serialize(new
+        {
+            choices = new[] { new { message = new { content = "Review the details", tool_calls = new[] { new { function = new { name = tool, arguments = args } } } } } },
+            usage = new { prompt_tokens = 19, completion_tokens = 9 }
+        });
+        var input = new CreateExecutionRequest("demo-booking", "Please arrange Ada's Analytics demo for November 1, 2030 in UTC; email ada@example.org.");
+
+        var directConfig = ServiceConfig("DirectLlm");
+        var directStore = new Direct.ExecutionStore(directConfig);
+        var direct = new Direct.ExecutionService(directStore,
+            new Direct.OpenAiCompatibleLlmClient(new HttpClient(new RecordingHandler(Fixture("create_demo_booking", fields))), directConfig),
+            new Direct.SyntheticBookingToolExecutor(directStore, directConfig), NullLogger<Direct.ExecutionService>.Instance);
+        var directCreated = await direct.CreateAsync(input, default);
+        Assert.Equal("ready", directCreated.Status);
+        Assert.Single(directCreated.ModelToolCalls);
+        Assert.Empty(directCreated.BusinessEffects);
+        Assert.Equal(19, directCreated.InputTokens);
+        Assert.Single((await direct.ConfirmAsync(directCreated.Id, default))!.BusinessEffects);
+
+        var workflowConfig = ServiceConfig("WorkflowAgent");
+        var workflowStore = new Workflow.ExecutionStore(workflowConfig);
+        var workflow = new Workflow.WorkflowService(workflowStore,
+            new Workflow.OpenAiCompatibleLlmClient(new HttpClient(new RecordingHandler(Fixture("update_booking", fields))), workflowConfig),
+            new Workflow.SyntheticBookingToolExecutor(workflowStore, workflowConfig), workflowConfig, NullLogger<Workflow.WorkflowService>.Instance);
+        var workflowCreated = await workflow.CreateAsync(input, default);
+        Assert.Equal("ready", workflowCreated.Status);
+        Assert.Empty(workflowCreated.BusinessEffects);
+        Assert.Equal(19, workflowCreated.InputTokens);
+        Assert.Single((await workflow.ConfirmAsync(workflowCreated.Id, default))!.BusinessEffects);
+
+        var processConfig = ServiceConfig("ProcessBound");
+        var processStore = new Process.ExecutionStore(processConfig);
+        var process = new Process.WorkflowService(processStore,
+            new Process.OpenAiCompatibleLlmClient(new HttpClient(new RecordingHandler(Fixture("update_booking", fields))), processConfig),
+            new Process.SyntheticBookingToolExecutor(processStore, processConfig),
+            new Process.ProcessRegistry(processConfig), NullLogger<Process.WorkflowService>.Instance);
+        var processCreated = await process.CreateAsync(input, default);
+        Assert.Equal("ready", processCreated.Status);
+        Assert.Empty(processCreated.BusinessEffects);
+        Assert.Equal(19, processCreated.InputTokens);
+        Assert.Single((await process.ConfirmAsync(processCreated.Id, default))!.BusinessEffects);
+    }
+
+    private static IConfiguration Config(string prefix) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        [$"{prefix}:ApiKey"] = "fixture-key", [$"{prefix}:Endpoint"] = "https://fixture.invalid/chat/completions",
+        [$"{prefix}:Model"] = "fixture-model", [$"{prefix}:Temperature"] = "0", [$"{prefix}:MaxOutputTokens"] = "100"
+    }).Build();
+
+    private static IConfiguration ServiceConfig(string prefix) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        [$"{prefix}:ApiKey"] = "fixture-key", [$"{prefix}:Endpoint"] = "https://fixture.invalid/chat/completions",
+        [$"{prefix}:Model"] = "fixture-model", [$"{prefix}:DatabasePath"] = Path.Combine(Path.GetTempPath(), $"kooshi-real-fixture-{Guid.NewGuid()}.db"),
+        ["ProcessBound:RegistryPath"] = Path.Combine(AppContext.BaseDirectory, "processes.json")
+    }).Build();
+
+    private sealed class RecordingHandler(string response, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
+    {
+        public string RequestBody { get; private set; } = "";
+        public string Authorization { get; private set; } = "";
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            Authorization = request.Headers.Authorization!.ToString();
+            return new HttpResponseMessage(status) { Content = new StringContent(response) };
+        }
+    }
+}

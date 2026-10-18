@@ -1,0 +1,23 @@
+{
+  "version": "8B-v1",
+  "seed": 42,
+  "repetitions": 1,
+  "variantFile": "../scenarios/variants/natural-language-v1.json",
+  "scenarioOrder": [
+    "cancellation",
+    "duplicate-replay",
+    "invalid-fields",
+    "reconnection",
+    "successful-booking",
+    "transient-retry",
+    "unauthorized"
+  ],
+  "architectureOrder": ["DirectLlm", "WorkflowAgent", "ProcessBound"],
+  "estimatedRequestsPerExecution": 2,
+  "expectedInputTokensPerRequest": 750,
+  "expectedOutputTokensPerRequest": 150,
+  "highRequestsPerExecution": 4,
+  "highInputTokensPerRequest": 2500,
+  "highOutputTokensPerRequest": 512,
+  "retryCount": 0
+}

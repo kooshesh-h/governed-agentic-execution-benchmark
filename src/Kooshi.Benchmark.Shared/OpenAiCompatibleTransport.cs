@@ -9,9 +9,36 @@ public sealed record LlmTransportResult(string Message, string? ToolName, string
 
 public static class OpenAiCompatibleTransport
 {
+    private static int requestCount;
+    public static void ReserveRequest(string counterFile, int maximum)
+    {
+        if (maximum < 1) throw new InvalidOperationException("Real LLM request limit is invalid.");
+        using var counter = new FileStream(counterFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var buffer = new byte[counter.Length];
+        counter.ReadExactly(buffer);
+        var consumed = int.Parse(Encoding.UTF8.GetString(buffer));
+        if (consumed >= maximum) throw new InvalidOperationException("Real LLM request limit reached before provider request.");
+        counter.Position = 0;
+        counter.SetLength(0);
+        counter.Write(Encoding.UTF8.GetBytes((consumed + 1).ToString()));
+        counter.Flush(true);
+    }
     public static async Task<LlmTransportResult> SendAsync(HttpClient http, string endpoint, string apiKey,
         object payload, CancellationToken ct)
     {
+        var limitText = Environment.GetEnvironmentVariable("KOOSHI_REMAINING_LLM_REQUESTS");
+        if (limitText is not null)
+        {
+            if (!int.TryParse(limitText, out var limit) || limit < 1 || Interlocked.Increment(ref requestCount) > limit)
+                throw new InvalidOperationException("Real LLM request limit reached before provider request.");
+        }
+        var counterFile = Environment.GetEnvironmentVariable("KOOSHI_REQUEST_COUNTER_FILE");
+        if (counterFile is not null)
+        {
+            if (!int.TryParse(Environment.GetEnvironmentVariable("KOOSHI_MAX_LLM_REQUESTS"), out var maximum) || maximum < 1)
+                throw new InvalidOperationException("Real LLM request limit is invalid.");
+            ReserveRequest(counterFile, maximum);
+        }
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -27,6 +54,7 @@ public static class OpenAiCompatibleTransport
         string? tool = null, arguments = null;
         if (choice.TryGetProperty("tool_calls", out var calls) && calls.ValueKind == JsonValueKind.Array && calls.GetArrayLength() > 0)
         {
+            if (calls.GetArrayLength() != 1) throw new JsonException("Expected exactly one model tool call.");
             var function = calls[0].GetProperty("function");
             tool = function.GetProperty("name").GetString();
             arguments = function.GetProperty("arguments").GetString();
