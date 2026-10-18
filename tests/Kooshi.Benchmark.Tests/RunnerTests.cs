@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Net;
+using System.Security.Cryptography;
 using Kooshi.Benchmark.Runner;
 using RunnerBenchmark = Kooshi.Benchmark.Runner.Benchmark;
 using Microsoft.Data.Sqlite;
@@ -10,6 +11,34 @@ namespace Kooshi.Benchmark.Tests;
 public class RunnerTests
 {
     private static Scenario Sample() => new("successful-booking", "test", "valid", [], "confirm", "success", ["one effect"], 30);
+
+    [Fact]
+    public void PromptSourceHashesMatchExactSourceBytesAndRequireEveryArchitecture()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "prompt-hashes-" + Guid.NewGuid().ToString("N"));
+        var architectures = new[] { "DirectLlm", "WorkflowAgent", "ProcessBound" };
+        try
+        {
+            foreach (var architecture in architectures)
+            {
+                var directory = Path.Combine(root, "src", $"Kooshi.Benchmark.{architecture}.Api");
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, "Llm.cs"), $"prompt for {architecture}\n");
+            }
+            var hashes = RunnerBenchmark.PromptSourceHashes(root);
+            Assert.Equal(architectures.Order(), hashes.Keys.Order());
+            foreach (var architecture in architectures)
+            {
+                var bytes = File.ReadAllBytes(Path.Combine(root, "src", $"Kooshi.Benchmark.{architecture}.Api", "Llm.cs"));
+                Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), hashes[architecture]);
+            }
+            File.AppendAllText(Path.Combine(root, "src", "Kooshi.Benchmark.DirectLlm.Api", "Llm.cs"), "changed");
+            Assert.NotEqual(hashes["DirectLlm"], RunnerBenchmark.PromptSourceHashes(root)["DirectLlm"]);
+            File.Delete(Path.Combine(root, "src", "Kooshi.Benchmark.ProcessBound.Api", "Llm.cs"));
+            Assert.Throws<FileNotFoundException>(() => RunnerBenchmark.PromptSourceHashes(root));
+        }
+        finally { Directory.Delete(root, true); }
+    }
 
     [Fact]
     public void CliParsesSmokeAndRejectsUnknownOptions()

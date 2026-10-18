@@ -53,6 +53,15 @@ jobs:
         run: |
           set -o pipefail
           docker compose --profile benchmark config --quiet 2>&1 | tee ci-logs/compose-config.log
+      - name: Verify packaged prompt sources
+        run: |
+          set -euo pipefail
+          for architecture in DirectLlm WorkflowAgent ProcessBound; do
+            source="src/Kooshi.Benchmark.${architecture}.Api/Llm.cs"
+            expected="$(sha256sum "$source" | cut -d' ' -f1)"
+            actual="$(docker compose --profile benchmark run --rm --no-deps --entrypoint sha256sum benchmark "/benchmark/$source" | cut -d' ' -f1)"
+            test "$actual" = "$expected" || { echo "Packaged source differs: $source" >&2; exit 1; }
+          done
       - name: Start manual APIs
         timeout-minutes: 3
         run: docker compose up -d --no-build direct workflow process
@@ -96,6 +105,10 @@ jobs:
           assert metadata['plannedRuns'] == 21 and len(runs) == 21
           assert metadata['options']['mode'] == 'simulated' and metadata['options']['seed'] == 42
           assert metadata['options']['restart'] is True
+          import hashlib
+          for architecture in ('DirectLlm', 'WorkflowAgent', 'ProcessBound'):
+              source = Path(f'src/Kooshi.Benchmark.{architecture}.Api/Llm.cs')
+              assert metadata['promptSha256'][architecture] == hashlib.sha256(source.read_bytes()).hexdigest()
           assert all(r['executionMode'] == 'simulated' for r in runs)
           assert len({r['runId'] for r in runs}) == 21
           assert len({(r['scenarioId'], r['architecture']) for r in runs}) == 21

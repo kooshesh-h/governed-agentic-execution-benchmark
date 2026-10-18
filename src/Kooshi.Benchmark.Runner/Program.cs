@@ -46,6 +46,15 @@ public static class Benchmark
         });
     public static string Setting(string architecture, string name, string fallback) => Configured(architecture, name) ?? fallback;
     public static string Sha256File(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+    public static Dictionary<string, string> PromptSourceHashes(string root)
+    {
+        return new[] { "DirectLlm", "WorkflowAgent", "ProcessBound" }.ToDictionary(architecture => architecture, architecture =>
+        {
+            var path = Path.Combine(root, "src", $"Kooshi.Benchmark.{architecture}.Api", "Llm.cs");
+            if (!File.Exists(path)) throw new FileNotFoundException($"Required prompt source for {architecture} is missing; package its Llm.cs with the benchmark.", path);
+            return Sha256File(path);
+        });
+    }
     public static Options Parse(string[] args)
     {
         var values = new Dictionary<string, string>();
@@ -538,7 +547,7 @@ public static class Benchmark
                 apiSettings, apiBinaryHashes, sourceRevision = Environment.GetEnvironmentVariable("KOOSHI_SOURCE_REVISION") ?? Environment.GetEnvironmentVariable("GITHUB_SHA"),
                 pilotProtocol = pilot, pilotProtocolSha256 = pilotHash, variantSha256 = variantHash,
                 scenarioSha256 = Directory.GetFiles(Path.Combine(root.FullName, "scenarios"), "*.json").OrderBy(x => x).ToDictionary(x => Path.GetFileName(x), Sha256File),
-                promptSha256 = new[] { "DirectLlm", "WorkflowAgent", "ProcessBound" }.ToDictionary(x => x, x => Sha256File(Path.Combine(root.FullName, "src", $"Kooshi.Benchmark.{x}.Api", "Llm.cs"))), scenarioDefinitions = scenarios,
+                promptSha256 = PromptSourceHashes(root.FullName), scenarioDefinitions = scenarios,
                 order = plan.Select((x, i) => new { index = i, x.Architecture, scenarioId = x.Scenario.Id, x.Repetition }).ToArray() };
             Export(directory, metadata, runs);
             using var interruption = new CancellationTokenSource();

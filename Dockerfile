@@ -29,6 +29,9 @@ WORKDIR /benchmark
 COPY Kooshi.ArchitectureBenchmark.slnx .
 COPY scenarios/ scenarios/
 COPY pilot/ pilot/
+COPY src/Kooshi.Benchmark.DirectLlm.Api/Llm.cs src/Kooshi.Benchmark.DirectLlm.Api/Llm.cs
+COPY src/Kooshi.Benchmark.WorkflowAgent.Api/Llm.cs src/Kooshi.Benchmark.WorkflowAgent.Api/Llm.cs
+COPY src/Kooshi.Benchmark.ProcessBound.Api/Llm.cs src/Kooshi.Benchmark.ProcessBound.Api/Llm.cs
 COPY --from=build /publish/runner/ runner/
 COPY --from=build /publish/Kooshi.Benchmark.DirectLlm.Api/ published/Kooshi.Benchmark.DirectLlm.Api/
 COPY --from=build /publish/Kooshi.Benchmark.WorkflowAgent.Api/ published/Kooshi.Benchmark.WorkflowAgent.Api/
