@@ -108,7 +108,7 @@ public static class Benchmark
         using var document = JsonDocument.Parse(File.ReadAllText(variantPath));
         var variants = document.RootElement.GetProperty("variants").Deserialize<PilotVariant[]>(Json) ?? [];
         var byId = originals.ToDictionary(x => x.Id);
-        if (protocol.Version != "8B-v1" || protocol.Repetitions != 1 || protocol.ScenarioOrder.Length != 7 ||
+        if (protocol.Version is not ("8B-v1" or "8B-v2") || protocol.Repetitions != 1 || protocol.ScenarioOrder.Length != 7 ||
             protocol.ScenarioOrder.Distinct().Count() != 7 || protocol.ScenarioOrder.Any(x => !byId.ContainsKey(x)) ||
             !protocol.ArchitectureOrder.SequenceEqual(new[] { "DirectLlm", "WorkflowAgent", "ProcessBound" }) ||
             variants.Length != 7 || variants.Select(x => x.ScenarioId).Distinct().Count() != 7 ||

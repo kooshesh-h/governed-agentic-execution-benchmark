@@ -1,6 +1,7 @@
 namespace Kooshi.Benchmark.DirectLlm.Api;
 
-public sealed record ConversationEntry(string Role, string Content, DateTimeOffset At);
+public sealed record ConversationEntry(string Role, string Content, DateTimeOffset At,
+    string? ToolCallId = null, string? ToolName = null, string? Arguments = null);
 public sealed record ToolAttempt(int Number, string Name, string Arguments, string Outcome, string? Error, DateTimeOffset At);
 public sealed record ExecutionEvent(string Type, string Detail, DateTimeOffset At);
 public sealed record BusinessEffect(string BookingId, DateTimeOffset At);

@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace Kooshi.Benchmark.Shared;
 
 public sealed record LlmTransportResult(string Message, string? ToolName, string? Arguments,
-    int? InputTokens, int? OutputTokens);
+    int? InputTokens, int? OutputTokens, string? ToolCallId = null);
 public sealed record NativeToolDiagnostic(int ToolCallCount, string[] ToolNames, string? FinishReason,
     bool? ArgumentsValidJson, string[][] ArgumentFieldNames, int ProviderStatus,
     int? InputTokens, int? OutputTokens, string? FailureClassification);
@@ -73,7 +73,7 @@ public static class OpenAiCompatibleTransport
         var finishReason = selected.TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String ? finish.GetString() : null;
         var content = choice.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String
             ? contentElement.GetString() ?? "" : "";
-        string? tool = null, arguments = null;
+        string? tool = null, arguments = null, toolCallId = null;
         if (choice.TryGetProperty("tool_calls", out var calls) && calls.ValueKind == JsonValueKind.Array && calls.GetArrayLength() > 0)
         {
             var names = new List<string>();
@@ -101,8 +101,9 @@ public static class OpenAiCompatibleTransport
             var function = calls[0].GetProperty("function");
             tool = function.GetProperty("name").GetString();
             arguments = function.GetProperty("arguments").GetString();
+            toolCallId = calls[0].TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null;
         }
         else observe?.Invoke(new(0, [], finishReason, null, [], (int)response.StatusCode, inputTokens, outputTokens, null));
-        return new(content, tool, arguments, inputTokens, outputTokens);
+        return new(content, tool, arguments, inputTokens, outputTokens, toolCallId);
     }
 }

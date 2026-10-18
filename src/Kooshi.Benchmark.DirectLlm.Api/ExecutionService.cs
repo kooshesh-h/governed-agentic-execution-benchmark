@@ -102,6 +102,7 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
                     var result = await tools.ExecuteAsync(state, decision.ToolName, arguments, ct);
                     state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, decision.ToolName, arguments, result.Outcome, result.Error, DateTimeOffset.UtcNow));
                     if (!result.Success) state.Failures.Add(result.Error ?? result.Outcome);
+                    if (decision.ToolName == "update_booking") RecordValidationFeedback(state, decision, arguments, result);
                     if (result.Success && decision.ToolName == "update_booking" && BookingRules.Validate(state.Booking).Count == 0)
                     {
                         // A complete update is still only data collection. Let the model decide
@@ -132,6 +133,7 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
                                 var followUp = await tools.ExecuteAsync(state, decision.ToolName, arguments, ct);
                                 state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, decision.ToolName, arguments, followUp.Outcome, followUp.Error, DateTimeOffset.UtcNow));
                                 if (!followUp.Success) state.Failures.Add(followUp.Error ?? followUp.Outcome);
+                                if (decision.ToolName == "update_booking") RecordValidationFeedback(state, decision, arguments, followUp);
                             }
                         }
                     }
@@ -140,9 +142,9 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
             state.ValidationErrors = BookingRules.Validate(state.Booking);
             state.Status = state.ValidationErrors.Count == 0 && state.ProposedBookingArguments is not null ? "ready" : "collecting";
             state.Response = state.Status == "ready" ? "Please review the model-proposed booking details and confirm." :
-                state.ValidationErrors.Count > 0 ? $"Please provide or correct: {string.Join("; ", state.ValidationErrors)}" : "Please provide a booking request so I can propose the operation.";
-            if (!string.IsNullOrWhiteSpace(decision.Message)) state.Messages.Add(new("assistant", decision.Message, DateTimeOffset.UtcNow));
-            state.Messages.Add(new("assistant", state.Response, DateTimeOffset.UtcNow));
+                state.ValidationErrors.Count > 0 ? $"Please provide or correct: {string.Join("; ", state.ValidationErrors)}" : "Booking details are valid; awaiting a model proposal for review.";
+            if (!string.IsNullOrWhiteSpace(decision.Message) && decision.ToolName != "update_booking")
+                state.Messages.Add(new("assistant", decision.Message, DateTimeOffset.UtcNow));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -151,6 +153,23 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
             state.Failures.Add("llm_interpretation_error: " + ex.Message);
             state.Response = "LLM interpretation failed. Retry or send another message.";
         }
+    }
+
+    private static void RecordValidationFeedback(ExecutionState state, LlmDecision decision, string arguments, ToolResult result)
+    {
+        var errors = BookingRules.Validate(state.Booking);
+        var feedback = result.Success
+            ? errors.Count == 0
+                ? "Booking fields were updated successfully. All five required fields are present and validation succeeded. No booking has been proposed or executed. Decide the appropriate next action."
+                : "Booking fields were updated. Validation failed: " + string.Join("; ", errors) + ". No booking has been proposed or executed. Decide the appropriate next action."
+            : "Booking fields were not updated: " + (result.Error ?? result.Outcome) + ". Current booking validation: " + string.Join("; ", errors) + ". No booking has been proposed or executed. Decide the appropriate next action.";
+        var now = DateTimeOffset.UtcNow;
+        if (!string.IsNullOrWhiteSpace(decision.ToolCallId))
+        {
+            state.Messages.Add(new("assistant_tool_call", decision.Message, now, decision.ToolCallId, "update_booking", arguments));
+            state.Messages.Add(new("tool", feedback, now, decision.ToolCallId));
+        }
+        else state.Messages.Add(new("application", feedback, now));
     }
 
     private async Task<LlmDecision> DecideAsync(ExecutionState state, CancellationToken ct)

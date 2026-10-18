@@ -6,7 +6,8 @@ using System.Text.RegularExpressions;
 
 namespace Kooshi.Benchmark.DirectLlm.Api;
 
-public sealed record LlmDecision(string Message, string? ToolName, string? Arguments, int? InputTokens = null, int? OutputTokens = null);
+public sealed record LlmDecision(string Message, string? ToolName, string? Arguments, int? InputTokens = null, int? OutputTokens = null,
+    string? ToolCallId = null);
 public interface ILlmClient
 {
     Task<LlmDecision> InterpretAsync(ExecutionState state, CancellationToken ct);
@@ -49,7 +50,17 @@ public sealed class OpenAiCompatibleLlmClient(HttpClient http, IConfiguration co
         {
             new { role = "system", content = "You assist with demo bookings. Required fields: customerName, email, product, preferredDate (YYYY-MM-DD), timeZone (IANA/Windows identifier). Use update_booking for incomplete or invalid details. Once all details are supplied, propose create_demo_booking with all five fields. A proposal does not execute anything; the API validates it and waits for explicit user confirmation. Never claim a booking was committed. Do not request other tools. Current collected booking: " + JsonSerializer.Serialize(state.Booking) }
         };
-        messages.AddRange(state.Messages.Select(m => (object)new { role = m.Role == "assistant" ? "assistant" : "user", content = m.Content }));
+        foreach (var m in state.Messages)
+        {
+            if (m.Role == "assistant_tool_call")
+                messages.Add(new { role = "assistant", content = (string?)null,
+                    tool_calls = new[] { new { id = m.ToolCallId, type = "function", function = new { name = m.ToolName, arguments = m.Arguments } } } });
+            else if (m.Role == "tool")
+                messages.Add(new { role = "tool", tool_call_id = m.ToolCallId, content = m.Content });
+            else if (m.Role == "application")
+                messages.Add(new { role = "system", content = "Application validation result: " + m.Content });
+            else messages.Add(new { role = m.Role == "assistant" ? "assistant" : "user", content = m.Content });
+        }
         var payload = new
         {
             model = settings.Model,
@@ -66,7 +77,7 @@ public sealed class OpenAiCompatibleLlmClient(HttpClient http, IConfiguration co
         };
         var result = await OpenAiCompatibleTransport.SendAsync(http, settings.Endpoint, settings.ApiKey, payload, ct,
             diagnostic => state.NativeToolDiagnostics.Add(diagnostic));
-        return new LlmDecision(result.Message, result.ToolName, result.Arguments, result.InputTokens, result.OutputTokens);
+        return new LlmDecision(result.Message, result.ToolName, result.Arguments, result.InputTokens, result.OutputTokens, result.ToolCallId);
     }
 }
 

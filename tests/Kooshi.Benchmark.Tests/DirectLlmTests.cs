@@ -208,6 +208,25 @@ public class DirectLlmTests
         public Task<LlmDecision> InterpretAsync(ExecutionState state, CancellationToken ct) => Task.FromResult(decisions[index++]);
     }
 
+    [Theory]
+    [InlineData("{\"email\":\"bad\",\"timeZone\":\"Invalid/Zone\"}", "email is invalid", "timeZone is invalid")]
+    [InlineData("{\"email\":\"ada@example.org\"}", "customerName is required", "product is required")]
+    public async Task UpdateFeedbackReportsActualValidationErrors(string args, string firstError, string secondError)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kooshi-test-{Guid.NewGuid()}.db");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DirectLlm:DatabasePath"] = path }).Build();
+        var store = new ExecutionStore(config);
+        var service = new ExecutionService(store, new FixedLlm(new("Updated", "update_booking", args)),
+            new SyntheticBookingToolExecutor(store, config), NullLogger<ExecutionService>.Instance);
+        var state = await service.CreateAsync(new("demo-booking", "Update details"), default);
+        var feedback = Assert.Single(state.Messages, m => m.Role == "application").Content;
+        Assert.Contains(firstError, feedback);
+        Assert.Contains(secondError, feedback);
+        Assert.Equal(1, state.LlmCalls);
+        Assert.Empty(state.BusinessEffects);
+        Assert.Empty((await service.ConfirmAsync(state.Id, default))!.BusinessEffects);
+    }
+
     [Fact]
     public async Task StateSurvivesStoreReconstruction()
     {

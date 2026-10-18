@@ -121,7 +121,7 @@ public class RealModeTransportTests
             product = "Analytics", preferredDate = "2030-11-01", timeZone = "UTC" });
         static string Fixture(string tool, string args) => JsonSerializer.Serialize(new
         {
-            choices = new[] { new { message = new { content = "Review the details", tool_calls = new[] { new { function = new { name = tool, arguments = args } } } } } },
+            choices = new[] { new { message = new { content = "Review the details", tool_calls = new[] { new { id = "call_fixture", type = "function", function = new { name = tool, arguments = args } } } } } },
             usage = new { prompt_tokens = 19, completion_tokens = 9 }
         });
         var input = new CreateExecutionRequest("demo-booking", "Please arrange Ada's Analytics demo for November 1, 2030 in UTC; email ada@example.org.");
@@ -169,7 +169,7 @@ public class RealModeTransportTests
             product = "Analytics", preferredDate = "2030-11-01", timeZone = "UTC" });
         static string Fixture(string tool, string args) => JsonSerializer.Serialize(new
         {
-            choices = new[] { new { message = new { content = "Review the details", tool_calls = new[] { new { function = new { name = tool, arguments = args } } } } } },
+            choices = new[] { new { message = new { content = "Review the details", tool_calls = new[] { new { id = "call_fixture", type = "function", function = new { name = tool, arguments = args } } } } } },
             usage = new { prompt_tokens = 19, completion_tokens = 9 }
         });
         var config = ServiceConfig("DirectLlm");
@@ -181,6 +181,15 @@ public class RealModeTransportTests
         var created = await service.CreateAsync(new("demo-booking", "Arrange Ada's demo"), default);
         Assert.Equal("ready", created.Status);
         Assert.Equal(2, handler.RequestCount);
+        using (var request = JsonDocument.Parse(handler.RequestBodies[1]))
+        {
+            var messages = request.RootElement.GetProperty("messages");
+            var call = messages.EnumerateArray().Single(m => m.GetProperty("role").GetString() == "assistant" && m.TryGetProperty("tool_calls", out _));
+            Assert.Equal("call_fixture", call.GetProperty("tool_calls")[0].GetProperty("id").GetString());
+            var result = messages.EnumerateArray().Single(m => m.GetProperty("role").GetString() == "tool");
+            Assert.Equal("call_fixture", result.GetProperty("tool_call_id").GetString());
+            Assert.Contains("validation succeeded", result.GetProperty("content").GetString());
+        }
         Assert.Equal(new[] { "update_booking", "create_demo_booking" }, created.ModelToolCalls.Select(x => x.Name));
         Assert.Empty(created.BusinessEffects);
         var confirmed = (await service.ConfirmAsync(created.Id, default))!;
@@ -217,10 +226,12 @@ public class RealModeTransportTests
     private sealed class SequenceHandler(params string[] responses) : HttpMessageHandler
     {
         public int RequestCount { get; private set; }
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        public List<string> RequestBodies { get; } = [];
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestBodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
             var response = responses[RequestCount++];
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(response) });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(response) };
         }
     }
 }
