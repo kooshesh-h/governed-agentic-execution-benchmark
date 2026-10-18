@@ -118,6 +118,32 @@ public class RealModeTransportTests
         Assert.Single((await process.ConfirmAsync(processCreated.Id, default))!.BusinessEffects);
     }
 
+    [Fact]
+    public async Task MockedRealProviderCanUpdateThenProposeBooking()
+    {
+        var fields = JsonSerializer.Serialize(new { customerName = "Ada Lovelace", email = "ada@example.org",
+            product = "Analytics", preferredDate = "2030-11-01", timeZone = "UTC" });
+        static string Fixture(string tool, string args) => JsonSerializer.Serialize(new
+        {
+            choices = new[] { new { message = new { content = "Review the details", tool_calls = new[] { new { function = new { name = tool, arguments = args } } } } } },
+            usage = new { prompt_tokens = 19, completion_tokens = 9 }
+        });
+        var config = ServiceConfig("DirectLlm");
+        var store = new Direct.ExecutionStore(config);
+        var handler = new SequenceHandler(Fixture("update_booking", fields), Fixture("create_demo_booking", fields));
+        var service = new Direct.ExecutionService(store,
+            new Direct.OpenAiCompatibleLlmClient(new HttpClient(handler), config),
+            new Direct.SyntheticBookingToolExecutor(store, config), NullLogger<Direct.ExecutionService>.Instance);
+        var created = await service.CreateAsync(new("demo-booking", "Arrange Ada's demo"), default);
+        Assert.Equal("ready", created.Status);
+        Assert.Equal(2, handler.RequestCount);
+        Assert.Equal(new[] { "update_booking", "create_demo_booking" }, created.ModelToolCalls.Select(x => x.Name));
+        Assert.Empty(created.BusinessEffects);
+        var confirmed = (await service.ConfirmAsync(created.Id, default))!;
+        Assert.Equal("succeeded", confirmed.Status);
+        Assert.Single(confirmed.BusinessEffects);
+    }
+
     private static IConfiguration Config(string prefix) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
     {
         [$"{prefix}:ApiKey"] = "fixture-key", [$"{prefix}:Endpoint"] = "https://fixture.invalid/chat/completions",
@@ -140,6 +166,16 @@ public class RealModeTransportTests
             RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
             Authorization = request.Headers.Authorization!.ToString();
             return new HttpResponseMessage(status) { Content = new StringContent(response) };
+        }
+    }
+
+    private sealed class SequenceHandler(params string[] responses) : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var response = responses[RequestCount++];
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(response) });
         }
     }
 }

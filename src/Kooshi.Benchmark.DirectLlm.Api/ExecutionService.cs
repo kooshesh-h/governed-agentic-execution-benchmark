@@ -75,13 +75,7 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
     {
         try
         {
-            state.LlmCalls++;
-            var llmStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            LlmDecision decision;
-            try { decision = await llm.InterpretAsync(state, ct); }
-            finally { state.LlmRequestMilliseconds = (state.LlmRequestMilliseconds ?? 0) + System.Diagnostics.Stopwatch.GetElapsedTime(llmStart).TotalMilliseconds; }
-            if (decision.InputTokens is not null) state.InputTokens = (state.InputTokens ?? 0) + decision.InputTokens;
-            if (decision.OutputTokens is not null) state.OutputTokens = (state.OutputTokens ?? 0) + decision.OutputTokens;
+            var decision = await DecideAsync(state, ct);
             if (decision.ToolName is not null)
             {
                 var arguments = decision.Arguments ?? "{}";
@@ -108,6 +102,39 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
                     var result = await tools.ExecuteAsync(state, decision.ToolName, arguments, ct);
                     state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, decision.ToolName, arguments, result.Outcome, result.Error, DateTimeOffset.UtcNow));
                     if (!result.Success) state.Failures.Add(result.Error ?? result.Outcome);
+                    if (result.Success && decision.ToolName == "update_booking" && BookingRules.Validate(state.Booking).Count == 0)
+                    {
+                        // A complete update is still only data collection. Let the model decide
+                        // whether to propose the business operation before confirmation is offered.
+                        decision = await DecideAsync(state, ct);
+                        if (decision.ToolName is not null)
+                        {
+                            arguments = decision.Arguments ?? "{}";
+                            state.ModelToolCalls.Add(new(decision.ToolName, arguments, DateTimeOffset.UtcNow));
+                            if (decision.ToolName == "create_demo_booking")
+                            {
+                                try
+                                {
+                                    using var proposal = JsonDocument.Parse(arguments);
+                                    if (proposal.RootElement.ValueKind != JsonValueKind.Object ||
+                                        proposal.RootElement.EnumerateObject().Any(p => p.Name.ToLowerInvariant() is not ("customername" or "email" or "product" or "preferreddate" or "timezone")))
+                                        throw new JsonException("Unexpected booking arguments.");
+                                    var proposed = new Booking();
+                                    BookingRules.Merge(proposed, proposal.RootElement);
+                                    if (BookingRules.Validate(proposed).Count > 0) throw new JsonException("Proposed booking is incomplete or invalid.");
+                                    state.Booking = proposed;
+                                    state.ProposedBookingArguments = JsonSerializer.Serialize(proposed);
+                                }
+                                catch (JsonException ex) { state.Failures.Add(ex.Message); }
+                            }
+                            else
+                            {
+                                var followUp = await tools.ExecuteAsync(state, decision.ToolName, arguments, ct);
+                                state.ToolAttempts.Add(new(state.ToolAttempts.Count + 1, decision.ToolName, arguments, followUp.Outcome, followUp.Error, DateTimeOffset.UtcNow));
+                                if (!followUp.Success) state.Failures.Add(followUp.Error ?? followUp.Outcome);
+                            }
+                        }
+                    }
                 }
             }
             state.ValidationErrors = BookingRules.Validate(state.Booking);
@@ -124,6 +151,18 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
             state.Failures.Add("llm_interpretation_error: " + ex.Message);
             state.Response = "LLM interpretation failed. Retry or send another message.";
         }
+    }
+
+    private async Task<LlmDecision> DecideAsync(ExecutionState state, CancellationToken ct)
+    {
+        state.LlmCalls++;
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        LlmDecision decision;
+        try { decision = await llm.InterpretAsync(state, ct); }
+        finally { state.LlmRequestMilliseconds = (state.LlmRequestMilliseconds ?? 0) + System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds; }
+        if (decision.InputTokens is not null) state.InputTokens = (state.InputTokens ?? 0) + decision.InputTokens;
+        if (decision.OutputTokens is not null) state.OutputTokens = (state.OutputTokens ?? 0) + decision.OutputTokens;
+        return decision;
     }
 
     private async Task ExecuteBookingAsync(ExecutionState state, CancellationToken ct)

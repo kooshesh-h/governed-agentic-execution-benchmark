@@ -137,6 +137,78 @@ public class DirectLlmTests
     }
 
     [Fact]
+    public async Task CompleteModelUpdateRequiresSeparateModelProposalBeforeConfirmation()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kooshi-test-{Guid.NewGuid()}.db");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DirectLlm:DatabasePath"] = path }).Build();
+        var store = new ExecutionStore(config);
+        var booking = new Booking { CustomerName = "Ada Lovelace", Email = "ada@example.org", Product = "Analytics",
+            PreferredDate = new DateOnly(2030, 11, 1), TimeZone = "UTC" };
+        var args = System.Text.Json.JsonSerializer.Serialize(booking);
+        var llm = new SequenceLlm(new("Updated", "update_booking", args, 271, 43),
+            new("Proposed", "create_demo_booking", args, 100, 20));
+        var service = new ExecutionService(store, llm, new SyntheticBookingToolExecutor(store, config), NullLogger<ExecutionService>.Instance);
+        var created = await service.CreateAsync(new("demo-booking", "Arrange Ada's demo"), default);
+        Assert.Equal("ready", created.Status);
+        Assert.Equal(2, created.LlmCalls);
+        Assert.Equal(371, created.InputTokens);
+        Assert.Equal(63, created.OutputTokens);
+        Assert.Equal(new[] { "update_booking", "create_demo_booking" }, created.ModelToolCalls.Select(x => x.Name));
+        Assert.Single(created.ToolAttempts);
+        Assert.Empty(created.BusinessEffects);
+        var confirmed = (await service.ConfirmAsync(created.Id, default))!;
+        Assert.Equal("succeeded", confirmed.Status);
+        Assert.Single(confirmed.BusinessEffects);
+        Assert.Single(confirmed.ToolAttempts, x => x.Name == "create_demo_booking");
+        Assert.Single((await service.ConfirmAsync(created.Id, default))!.BusinessEffects);
+    }
+
+    [Theory]
+    [InlineData("create_demo_booking", "{}")]
+    [InlineData("update_booking", null)]
+    [InlineData("delete_all_bookings", "{}")]
+    public async Task CompleteUpdateDoesNotConfirmWithoutValidModelProposal(string secondTool, string? secondArgs)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kooshi-test-{Guid.NewGuid()}.db");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DirectLlm:DatabasePath"] = path }).Build();
+        var store = new ExecutionStore(config);
+        var booking = new Booking { CustomerName = "Ada Lovelace", Email = "ada@example.org", Product = "Analytics",
+            PreferredDate = new DateOnly(2030, 11, 1), TimeZone = "UTC" };
+        var args = System.Text.Json.JsonSerializer.Serialize(booking);
+        var llm = new SequenceLlm(new("Updated", "update_booking", args),
+            new("Follow-up", secondTool, secondArgs ?? args));
+        var service = new ExecutionService(store, llm, new SyntheticBookingToolExecutor(store, config), NullLogger<ExecutionService>.Instance);
+        var created = await service.CreateAsync(new("demo-booking", "Arrange Ada's demo"), default);
+        Assert.Equal(2, created.LlmCalls);
+        Assert.Equal("collecting", created.Status);
+        Assert.Empty(created.BusinessEffects);
+        Assert.Empty((await service.ConfirmAsync(created.Id, default))!.BusinessEffects);
+    }
+
+    [Fact]
+    public async Task FailedFollowUpDecisionCannotCommit()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"kooshi-test-{Guid.NewGuid()}.db");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DirectLlm:DatabasePath"] = path }).Build();
+        var store = new ExecutionStore(config);
+        var booking = new Booking { CustomerName = "Ada Lovelace", Email = "ada@example.org", Product = "Analytics",
+            PreferredDate = new DateOnly(2030, 11, 1), TimeZone = "UTC" };
+        var llm = new SequenceLlm(new LlmDecision("Updated", "update_booking", System.Text.Json.JsonSerializer.Serialize(booking)));
+        var service = new ExecutionService(store, llm, new SyntheticBookingToolExecutor(store, config), NullLogger<ExecutionService>.Instance);
+        var created = await service.CreateAsync(new("demo-booking", "Arrange Ada's demo"), default);
+        Assert.Equal(2, created.LlmCalls);
+        Assert.Equal("failed", created.Status);
+        Assert.Empty(created.BusinessEffects);
+        Assert.Empty((await service.ConfirmAsync(created.Id, default))!.BusinessEffects);
+    }
+
+    private sealed class SequenceLlm(params LlmDecision[] decisions) : ILlmClient
+    {
+        private int index;
+        public Task<LlmDecision> InterpretAsync(ExecutionState state, CancellationToken ct) => Task.FromResult(decisions[index++]);
+    }
+
+    [Fact]
     public async Task StateSurvivesStoreReconstruction()
     {
         var path = Path.Combine(Path.GetTempPath(), $"kooshi-test-{Guid.NewGuid()}.db");
