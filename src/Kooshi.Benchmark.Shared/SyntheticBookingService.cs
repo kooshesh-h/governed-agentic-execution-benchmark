@@ -16,8 +16,6 @@ public interface ISyntheticBookingService
     Task<BookingOperationResult> ExecuteAsync(BookingOperation operation, IBookingCommitStore store, CancellationToken ct);
 }
 
-// The configured scenario is selected per operation. Attempt counts belong to this service instance,
-// so a fresh instance gives an isolated, repeatable fault sequence.
 public sealed class SyntheticBookingService : ISyntheticBookingService
 {
     private readonly ConcurrentDictionary<Guid, int> _attempts = new();

@@ -1,10 +1,12 @@
 # Phase 8A readiness assessment
 
+**Later evidence update:** Real-LLM Phase 8B v1 and v2 feasibility experiments were subsequently run. V1 started 17/21 scheduled executions (15 satisfied); v2 started 19/21 (18 satisfied, one observed violation) and stopped when provider usage accounting was unavailable. See [curated evidence](../publication-evidence/README.md). The Phase 8A statements below describe the earlier readiness checkpoint, not the current execution history. Confirmatory comparison remains pending.
+
 ## Phase 8B preparation update
 
-The versioned 21-execution natural-language pilot is prepared in `pilot/phase-8b-v1.json`; operating instructions are in `docs/REAL_LLM_PILOT_RUNBOOK.md`. A dry run validates real-mode settings and prints a user-priced cost estimate without contacting a provider. The shared transport now reserves from a per-experiment request counter before every provider request, including after API restart. Metadata records pilot, variant, original scenario, and prompt hashes. No paid call was made. Pilot readiness remains conditional on a user-selected model/prices, credentials, provider compatibility, and separate paid-execution approvals; the estimated-budget threshold is not a guaranteed spending cap.
+At this Phase 8A checkpoint, the versioned 21-execution natural-language pilot had been prepared in `pilot/phase-8b-v1.json`; operating instructions are in [the pilot runbook](REAL_LLM_PILOT_RUNBOOK.md). A dry run validates real-mode settings and prints a user-priced cost estimate without contacting a provider. The shared transport reserves from a per-experiment request counter before every provider request, including after API restart. Metadata records pilot, variant, original scenario, and prompt hashes. No paid call had been made **at this checkpoint**. The estimated-budget threshold is not a guaranteed spending cap.
 
-Status after Phase 8A.1: **ready for a small, separately authorized real-LLM feasibility pilot in an environment permitting local loopback sockets; not ready for confirmatory scientific comparison**. No paid provider call was made. All 21 simulated architecture/scenario runs passed locally with restart enabled, and all 54 xUnit tests passed with loopback access.
+Status after Phase 8A.1: **ready for a small, separately authorized real-LLM feasibility pilot in an environment permitting local loopback sockets; not ready for confirmatory scientific comparison**. At that time no paid provider call had been made. All 21 simulated architecture/scenario runs passed locally with restart enabled, and all 54 xUnit tests passed with loopback access.
 
 ## Trace and responsibility
 

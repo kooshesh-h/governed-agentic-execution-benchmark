@@ -1,4 +1,6 @@
-# Real LLM experiment plan (proposal; no paid execution authorized)
+# Real LLM experiment plan (historical proposal)
+
+This proposal preceded the separately authorized Phase 8B v1 and v2 paid feasibility runs. Their incomplete, distinct observations are documented in [curated evidence](../publication-evidence/README.md). No further paid execution is authorized by this document; the 630-run confirmatory study remains a plan.
 
 ## Design
 

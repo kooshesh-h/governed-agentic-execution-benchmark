@@ -6,7 +6,7 @@ The DirectLlm Chat Completions request exposes `update_booking` and `create_demo
 
 Each DirectLlm execution now includes `nativeToolDiagnostics` in its state and runner evidence. Per response, it records call count, recognized tool names in order, finish reason, JSON validity, recognized argument field names, HTTP status, available token usage, and a failure classification. Unknown tool and field names are replaced with fixed labels. Argument values, raw responses, credentials, and headers are excluded. Multiple calls remain a classified parser failure; available usage is added to execution totals. Existing result fields remain unchanged.
 
-The separately labeled paid diagnostic test below is **prepared only**. It requires a pre-existing `OPENAI_API_KEY_FILE` pointing to the secure key file. Run from the solution root only after separate authorization, with verified current prices entered at the prompts. The estimate threshold checks accounting between runs and is not a provider billing cap.
+The diagnostic command below was prepared at this stage; a later separately authorized diagnostic was executed and remains preserved in the ignored local results. Treat the command as an example for a **new** run only. It requires a pre-existing `OPENAI_API_KEY_FILE` pointing to the secure key file and separate authorization, with verified current prices. The estimate threshold checks accounting between runs and is not a provider billing cap.
 
 ```powershell
 $env:LLM_ENDPOINT = 'https://api.openai.com/v1/chat/completions'

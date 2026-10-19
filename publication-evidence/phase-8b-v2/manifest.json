@@ -1,0 +1,101 @@
+{
+  "publicationCopy": "phase-8b-v2",
+  "originalExperimentPath": "results/pilot-8b-v2-full/experiment-20261018T205644493-05f29907638948aca968599b872222ef",
+  "originalFileSha256": {
+    "metadata.json": "2ff0ca747b2d1a9cc9ec9f5ccabbd4a3ebbf278865b023068e148a91f5b157a5",
+    "runs.json": "ac980e50e7a52913aaa86a278142eaff3de5c33f7f573c736a9387853b1c0a33",
+    "summary.json": "364f0d0cf5f08114e6f1c1fafd535c9e91f3d8c64989d4d31f217c89b4bee674",
+    "summary.csv": "dedb505eee0d630b684da7a16aeabc889815a35a6e2ae90c83e4af90843eb0a9",
+    "runs.csv": "ff8dbae6f7f457f52dd269f2c7712c534885853ab6873def271f5df8fbff4c5d",
+    "failures.json": "66cc8fab84ee7e772d63a3d144c34b4096f03e48fa041c4deda61e6de98ba092",
+    "request-count.txt": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4"
+  },
+  "originalSqliteSha256": [
+    {
+      "name": "093ea14c7b094a879d6701db2379ab10.db",
+      "sha256": "e9520b83c2d8d983397b53800b0b7d70310590e46a22558e329e80c7570c2012"
+    },
+    {
+      "name": "34fdfe0f67d943a18b22b27979227af4.db",
+      "sha256": "02a73f1423eb1f88d49b63450210b844dad0ca4afed130d4d513b0e3c941a445"
+    },
+    {
+      "name": "380122234b114c60a5ba9bdb6c7de4d4.db",
+      "sha256": "7d1ff4ab9d7b488603838a1c2af19cb602e74ed14a0cb688b3759536eef4c794"
+    },
+    {
+      "name": "4f4ac9b20f3248a9ad428d2b596f26aa.db",
+      "sha256": "90f83de30216d619e34e97003d5cab14f1e6f7cf07bd263557a37d455bf41618"
+    },
+    {
+      "name": "5e9dadb4e9c7413aa86fb0c8d60ec387.db",
+      "sha256": "8772d461dd8f6694a3c5377e8b397e2b74e99fdae2802cea7cc02f92e235e955"
+    },
+    {
+      "name": "7ad717c998e74b739d07991383be92ab.db",
+      "sha256": "506789eb77a39a017d1e2612c36a5ea6dbcf51810412f28fec8f793ad8a349e0"
+    },
+    {
+      "name": "83ace99cbc9f44e18fd7cfd3dfa27ecf.db",
+      "sha256": "3942fa240551c2985ba9e871c411efb2eafc7ccba4bc5f7ca06803b6c99fa4f5"
+    },
+    {
+      "name": "85def27947ac448ba0b51ef0b27835d3.db",
+      "sha256": "6e17c8676955d46a6df766754d5e1401e17b152f769b83d526d0d91c6d8fb573"
+    },
+    {
+      "name": "99eb1f2b6ac04cd1b96e5794b246e875.db",
+      "sha256": "5d22c662b94212c6ac12bbda1c6adfaac12453bc639955a3add44d02981ece51"
+    },
+    {
+      "name": "9bbc60d30510403fbbfc443e4b03af9e.db",
+      "sha256": "12010da8538d985d714b58f7fcaf20d280845123648558927c377f0697c15e2b"
+    },
+    {
+      "name": "9de22cbe1aa8444a9ffc54dbc049a529.db",
+      "sha256": "f590fe1f459ab92a70b04746f54cbfb75b96ad4b1f958a07d1d5e5c246ad84f5"
+    },
+    {
+      "name": "bd5e39976a584b1d883d6114793ec18e.db",
+      "sha256": "5e763f72f0af92b922bf58f2248bab38268e09c507ed110860690aff1a2e2efa"
+    },
+    {
+      "name": "c0efe8ea25c8405d836fb91e0a1c92f5.db",
+      "sha256": "9deedd7a5e3f14dc78abeb345debbff5cdf6c9dd3a3b6ab128f61737fc5fae44"
+    },
+    {
+      "name": "c27888164559432884fc0ab0f5b87093.db",
+      "sha256": "1c2c62c0215cb03d15ca1fc399b84e1ded8911bc59dfde16459a6172c4621453"
+    },
+    {
+      "name": "d2e8f17a8be94d2c91c76dae8151a8a3.db",
+      "sha256": "b1c415d979d1db42e43b41bebced512c675c011e6a1eb8b8c58717f01f8c82f7"
+    },
+    {
+      "name": "e496fc8a355549fbaa8a5cb663b790c5.db",
+      "sha256": "693c35adc852ac645f28fe133f49d155471ba62b00b3e2e893fa4d9f1ac94773"
+    },
+    {
+      "name": "e8262d0bcd5845f5bda2e5dbd0964287.db",
+      "sha256": "2ff63ff73519ab2c87be6ebdb9664abf83ea7d9cc3ef570e741eb72705db3a83"
+    },
+    {
+      "name": "ec65eee740f34b9ba9ce14f4f9d4e8ce.db",
+      "sha256": "9d10c03e257526ec456b180fed2931d3942f9c48e372debacd61b1789ca11d5d"
+    },
+    {
+      "name": "f06cdad77dea406ab966718411d69880.db",
+      "sha256": "a95c102ad328d7d47d7e9842e5c72cddb836c461636dd14d6612e94e6385a303"
+    }
+  ],
+  "redactions": [
+    "Raw per-run evidence objects and free-text diagnostics omitted from runs-public.json.",
+    "Raw SQLite databases and original JSON/CSV exports are not included.",
+    "Metadata scenario definitions and local output path options omitted; their frozen source files are tracked separately."
+  ],
+  "publicationFiles": [
+    "metadata-public.json",
+    "runs-public.json",
+    "summary-original.json"
+  ]
+}

@@ -1,0 +1,221 @@
+{
+  "experimentId": "experiment-20261018T183218169-6e37646f78b44ea09923ed6e43875420",
+  "executionMode": "real_llm",
+  "startedAt": "2026-10-18T21:32:18.3737428+03:00",
+  "plannedRuns": 21,
+  "startedRuns": 17,
+  "complete": false,
+  "sourceRevision": "6af2362ddbe40288712f2e4182fd5f0fb13ff8f0",
+  "sourceProvenance": {
+    "commit": "6af2362ddbe40288712f2e4182fd5f0fb13ff8f0",
+    "branch": "master",
+    "dirty": false,
+    "source": "git",
+    "warning": null
+  },
+  "sourceTreeSha256": "59a0ceaf7e41fabb2e4b9012a8d8dcfc48f60f625a548516782433599bbd14c3",
+  "configurationSha256": "f6fed445a49a97b3a367f3bbc28f28797f1a9cce4b77b564c44cd721b558edb1",
+  "pilotProtocol": {
+    "version": "8B-v1",
+    "seed": 42,
+    "repetitions": 1,
+    "variantFile": "../scenarios/variants/natural-language-v1.json",
+    "scenarioOrder": [
+      "cancellation",
+      "duplicate-replay",
+      "invalid-fields",
+      "reconnection",
+      "successful-booking",
+      "transient-retry",
+      "unauthorized"
+    ],
+    "architectureOrder": [
+      "DirectLlm",
+      "WorkflowAgent",
+      "ProcessBound"
+    ],
+    "estimatedRequestsPerExecution": 2,
+    "expectedInputTokensPerRequest": 750,
+    "expectedOutputTokensPerRequest": 150,
+    "highRequestsPerExecution": 4,
+    "highInputTokensPerRequest": 2500,
+    "highOutputTokensPerRequest": 512,
+    "retryCount": 0
+  },
+  "pilotProtocolSha256": "df8ebe90496a76da35ba351f7c5787bf2c404818b8bc5f0b64fe8f51f38f7cdb",
+  "variantSha256": "b23e72b5bef2ee17dd456c427e9ac6c0e5c8e512151b6d545cd2f6649715d290",
+  "scenarioSha256": {
+    "cancellation.json": "b5e790d721932b720fe2105e51e4a743f039302f1563bb8807549c4f6fb8b480",
+    "duplicate-replay.json": "01e662e720091e3de6d0cb4d18c3e987285e18afd4411b7f12fae1346c82d7aa",
+    "invalid-fields.json": "4732cf5305dec6be77093991e8ad358f936f1150e5dfd48aa83188da5ba3d412",
+    "reconnection.json": "f00b1a6670389de3574268580612ffb16d4cca97a661b886c1ee2dd2775fa168",
+    "successful-booking.json": "09b73d5257b3f9bc86d0ae1d2d9b21b888f565c314bb572a8bb731cc326725a9",
+    "transient-retry.json": "8f97db966f9872dc3651957ee63c2c4e8bc4e877343798c933e585f98f8a2de8",
+    "unauthorized.json": "076fdd997804a85e7c55f837d0e66e3206999c8892470ccb3ad659223cdc6f7d"
+  },
+  "promptSha256": {
+    "DirectLlm": "e9cc3fcbb27b414137b58d9cbbd673fec9260b998a6866541305b491655042a2",
+    "WorkflowAgent": "da58419b52d8066dc090a4d0241688a05577d97d2d5e8b8ad5672e9401c4df44",
+    "ProcessBound": "02092938006fbf094bd2cd5e7ea1907c150b3ccdbe2ff3e7fff1565431bfc4da"
+  },
+  "apiBinaryHashes": {
+    "ProcessBound": "fd440677098447c7407a99e37f65ddf72eb26ebb8eebfe6ad44c4ad91abc6af5",
+    "WorkflowAgent": "209f4682c41ffa5a9ec0243da4be81a738e522148514d3b8eed3de43a458ef15",
+    "DirectLlm": "73b3491fc62de5c02a84d34204b69eb1eb97ab29e38b8c16f60919cdfe465a05"
+  },
+  "apiSettings": {
+    "ProcessBound": {
+      "model": "gpt-4.1-mini",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "temperature": "0",
+      "maxOutputTokens": "512",
+      "timeoutSeconds": "30"
+    },
+    "WorkflowAgent": {
+      "model": "gpt-4.1-mini",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "temperature": "0",
+      "maxOutputTokens": "512",
+      "timeoutSeconds": "30"
+    },
+    "DirectLlm": {
+      "model": "gpt-4.1-mini",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "temperature": "0",
+      "maxOutputTokens": "512",
+      "timeoutSeconds": "30"
+    }
+  },
+  "order": [
+    {
+      "index": 0,
+      "architecture": "ProcessBound",
+      "scenarioId": "cancellation",
+      "repetition": 1
+    },
+    {
+      "index": 1,
+      "architecture": "WorkflowAgent",
+      "scenarioId": "cancellation",
+      "repetition": 1
+    },
+    {
+      "index": 2,
+      "architecture": "DirectLlm",
+      "scenarioId": "cancellation",
+      "repetition": 1
+    },
+    {
+      "index": 3,
+      "architecture": "WorkflowAgent",
+      "scenarioId": "duplicate-replay",
+      "repetition": 1
+    },
+    {
+      "index": 4,
+      "architecture": "ProcessBound",
+      "scenarioId": "duplicate-replay",
+      "repetition": 1
+    },
+    {
+      "index": 5,
+      "architecture": "DirectLlm",
+      "scenarioId": "duplicate-replay",
+      "repetition": 1
+    },
+    {
+      "index": 6,
+      "architecture": "ProcessBound",
+      "scenarioId": "invalid-fields",
+      "repetition": 1
+    },
+    {
+      "index": 7,
+      "architecture": "WorkflowAgent",
+      "scenarioId": "invalid-fields",
+      "repetition": 1
+    },
+    {
+      "index": 8,
+      "architecture": "DirectLlm",
+      "scenarioId": "invalid-fields",
+      "repetition": 1
+    },
+    {
+      "index": 9,
+      "architecture": "WorkflowAgent",
+      "scenarioId": "reconnection",
+      "repetition": 1
+    },
+    {
+      "index": 10,
+      "architecture": "ProcessBound",
+      "scenarioId": "reconnection",
+      "repetition": 1
+    },
+    {
+      "index": 11,
+      "architecture": "DirectLlm",
+      "scenarioId": "reconnection",
+      "repetition": 1
+    },
+    {
+      "index": 12,
+      "architecture": "WorkflowAgent",
+      "scenarioId": "successful-booking",
+      "repetition": 1
+    },
+    {
+      "index": 13,
+      "architecture": "ProcessBound",
+      "scenarioId": "successful-booking",
+      "repetition": 1
+    },
+    {
+      "index": 14,
+      "architecture": "DirectLlm",
+      "scenarioId": "successful-booking",
+      "repetition": 1
+    },
+    {
+      "index": 15,
+      "architecture": "ProcessBound",
+      "scenarioId": "transient-retry",
+      "repetition": 1
+    },
+    {
+      "index": 16,
+      "architecture": "DirectLlm",
+      "scenarioId": "transient-retry",
+      "repetition": 1
+    },
+    {
+      "index": 17,
+      "architecture": "WorkflowAgent",
+      "scenarioId": "transient-retry",
+      "repetition": 1
+    },
+    {
+      "index": 18,
+      "architecture": "ProcessBound",
+      "scenarioId": "unauthorized",
+      "repetition": 1
+    },
+    {
+      "index": 19,
+      "architecture": "WorkflowAgent",
+      "scenarioId": "unauthorized",
+      "repetition": 1
+    },
+    {
+      "index": 20,
+      "architecture": "DirectLlm",
+      "scenarioId": "unauthorized",
+      "repetition": 1
+    }
+  ],
+  "requestCount": 28,
+  "usageUnavailableRuns": [
+    "f03af577d4ea4501a3c036db46a88a53"
+  ]
+}

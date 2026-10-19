@@ -24,7 +24,9 @@ An incomplete or invalid update yields `Booking fields were updated. Validation 
 
 Relative to 8B-v1, this protocol has the same seed, seven scenarios, three architectures, variant file, request estimates, and business assertions. The DirectLlm context now includes actual application validation feedback. The 8B.2 explicit parallel-call setting is retained.
 
-## Prepared future experiments (not executed)
+## Prepared commands and subsequent observation
+
+After this document was drafted, a separately authorized v2 real-LLM feasibility run was performed. Its preserved local directory is `results/pilot-8b-v2-full/experiment-20261018T205644493-05f29907638948aca968599b872222ef`; see the [curated publication copy](../publication-evidence/phase-8b-v2/). Of 21 scheduled executions, 19 started: 18 satisfied, one started `DirectLlm` successful-booking execution violated its criterion, and the last two scheduled unauthorized cases did not start. Unavailable provider usage for a started run caused the runner's between-run accounting gate to stop the workload. The unstarted cases are runner-level noncompletion, not observed architecture violations. Scheduled-workload completion was 18/21: ProcessBound 7/7, WorkflowAgent 6/7, DirectLlm 5/7. This one-repetition, incomplete feasibility run cannot establish statistical significance or general superiority. It remains separate from v1.
 
 Use distinct output roots. Each invocation creates its own `experiment-...` subdirectory and captures provenance. Set an exact model, credential source, current prices, and budget before a real run; review a `--dry-run` first. No real request is authorized by this document.
 
@@ -46,4 +48,4 @@ dotnet run --project src/Kooshi.Benchmark.Runner -c Release --no-build -- @commo
 dotnet run --project src/Kooshi.Benchmark.Runner -c Release --no-build -- @common --max-llm-requests 84 --output results/pilot-8b-v2 --dry-run
 ```
 
-The real commands require a credential and `KOOSHI_REAL_LLM_AUTHORIZED=yes`; only remove `--dry-run` after separate authorization. The diagnostic and full pilot must each use a new experiment directory. Real results remain unobserved for this configuration.
+These commands are examples for a **new** experiment, not instructions to complete or overwrite the historical one. A new real execution requires a credential, `KOOSHI_REAL_LLM_AUTHORIZED=yes`, and separate authorization before removing `--dry-run`. Use a new experiment directory and retain all historical results.

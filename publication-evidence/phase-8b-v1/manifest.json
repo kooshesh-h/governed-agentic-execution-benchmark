@@ -1,0 +1,93 @@
+{
+  "publicationCopy": "phase-8b-v1",
+  "originalExperimentPath": "results/pilot-8b-full/experiment-20261018T183218169-6e37646f78b44ea09923ed6e43875420",
+  "originalFileSha256": {
+    "metadata.json": "7369d32662020c3635a90aad5a3df4e12f82f35576d9101f2bce4cc1ab588b9a",
+    "runs.json": "ef76a04fae72ffa9f9b3e20e298c54b2a631e1b6944377a43f4b8d6f8bb06842",
+    "summary.json": "803ef5d05ff18ef87e6ddd723fbe0a4646d46c654b1e833edfcbabb908c658b1",
+    "summary.csv": "f3d462e0a9c0c04b4b994d4c36ae70653107d26074dacdaf6f310841d500799b",
+    "runs.csv": "ac4893c17e8c11eb8649a26dd5c8e7528ab1028a13c904009b115b17ecdac31d",
+    "failures.json": "d58b83e686e42c168c33fccdd6119ccf604a02b1a6088790f6c90407239b58e9",
+    "request-count.txt": "59e19706d51d39f66711c2653cd7eb1291c94d9b55eb14bda74ce4dc636d015a"
+  },
+  "originalSqliteSha256": [
+    {
+      "name": "193c4078452146edbac93481ceab145d.db",
+      "sha256": "1ba762e433fb4f4cd0a83d1598dda2c5239890fa7fb7a12db14b1faa33906a3e"
+    },
+    {
+      "name": "273d2f84bd3a4eccb4160eb2c6ae4844.db",
+      "sha256": "bbdf3e378de601697908f9c4aadfffa8e965a9c670461e4f528a7f6ad0a9b56c"
+    },
+    {
+      "name": "274dd4a5e9ca4c1e8850e32e8fdfc10d.db",
+      "sha256": "aaec9357362dc98bccd1527830f136ca2f0cdc84923a87314d2426879349e58e"
+    },
+    {
+      "name": "31d2f03fcf6247d1a8e03e457266dea6.db",
+      "sha256": "69299ddcc3093d811226e924c0cb8490276c5852508e7a6fb7da9ac575c1c2cf"
+    },
+    {
+      "name": "4cb88c4fefaa4dd4b44361f8be3ecb67.db",
+      "sha256": "f3b8d26775854eabfcce1b52442f99e483a9b656e5e8fe8576f7299a9c5762a5"
+    },
+    {
+      "name": "5a660d2512364e49824670012763660a.db",
+      "sha256": "5b2f34c3a027947440ab239fc86c294e90061868efb69eebf9fb1c7b3f0e89fd"
+    },
+    {
+      "name": "86f268f5aae444c0b576407b1e805cd1.db",
+      "sha256": "4d3c6ac04f6aee2cd8736e58ede8a40d91f0b4763637f729dfcb7bff3825aa42"
+    },
+    {
+      "name": "9f2fa83029ef46cc9c68ec8d5aafd0fc.db",
+      "sha256": "ca102a93b5087d5675b5c085f61bf5bb0195b35f587fecdfb022fdaa38ccea66"
+    },
+    {
+      "name": "a8f3220e4bb7407b82fcc33cb7eac073.db",
+      "sha256": "2e8d87191cdd34c7118aeb50c5c1f5d8a50f1210edd048d1ace8f0dcc313adb6"
+    },
+    {
+      "name": "b534b4bf1cd14e9f8a08ea46fe93b925.db",
+      "sha256": "1a1e8c3b237d30dab177bcb1401789585f5d959bab2f03c51095b2baebeca4db"
+    },
+    {
+      "name": "b9ebf9a77b6c4b34816a0ad2cc18e8b7.db",
+      "sha256": "903c86d47aba9f63f320009a5bbe8765102431b12795b27e1146701156836134"
+    },
+    {
+      "name": "c2f6d0af021e486aa3adc689b4460a51.db",
+      "sha256": "cb407515175213bfd868a9813603f3bb786176a6edd948dac2d98a5ab86d7ad5"
+    },
+    {
+      "name": "d12a8c1843834ea787119e53af2380c8.db",
+      "sha256": "bf0351691d514caeadac9a750f2b9a87d787034e9ce902691e4035f4f8d53044"
+    },
+    {
+      "name": "d196cfcd78f245d8b7fe3d38817fc889.db",
+      "sha256": "962093b255baba23465669e2869301ef27ee2f6ab490d38433af674373f20ad4"
+    },
+    {
+      "name": "f03af577d4ea4501a3c036db46a88a53.db",
+      "sha256": "2bc0cdb2050a64fda9d1d0a52ecb41fe338d9cce4e4ad4a0eb5698bd84f7c135"
+    },
+    {
+      "name": "f957a97b813e43628db323805b1bcfa3.db",
+      "sha256": "436b2766a1ab141a240fa9b9068bd110b051dad558a5f351739c74a30ebeda9a"
+    },
+    {
+      "name": "ffd41d399e114dd39e092da321b77c2f.db",
+      "sha256": "57eb05c5fa87dcd50ef66aadb3d04cc593b553ae1e597c910238aaf80de07efa"
+    }
+  ],
+  "redactions": [
+    "Raw per-run evidence objects and free-text diagnostics omitted from runs-public.json.",
+    "Raw SQLite databases and original JSON/CSV exports are not included.",
+    "Metadata scenario definitions and local output path options omitted; their frozen source files are tracked separately."
+  ],
+  "publicationFiles": [
+    "metadata-public.json",
+    "runs-public.json",
+    "summary-original.json"
+  ]
+}

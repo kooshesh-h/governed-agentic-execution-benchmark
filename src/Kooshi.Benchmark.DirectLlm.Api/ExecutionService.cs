@@ -105,8 +105,6 @@ public sealed class ExecutionService(ExecutionStore store, ILlmClient llm, IBusi
                     if (decision.ToolName == "update_booking") RecordValidationFeedback(state, decision, arguments, result);
                     if (result.Success && decision.ToolName == "update_booking" && BookingRules.Validate(state.Booking).Count == 0)
                     {
-                        // A complete update is still only data collection. Let the model decide
-                        // whether to propose the business operation before confirmation is offered.
                         decision = await DecideAsync(state, ct);
                         if (decision.ToolName is not null)
                         {
